@@ -33,6 +33,22 @@ Auto-Healer API Server is a modular, production-ready API server for automated r
      pre-commit run --all-files
      ```
 
+## API authentication documentation
+
+### API Key Authentication
+
+All endpoints (except `/health`) require an API key for access. The API key must be provided in the `x-api-key` HTTP header.
+
+- To set the API key, use the `API_KEY` environment variable when starting the server.
+- Example usage:
+  ```bash
+  curl -H "x-api-key: changeme" http://localhost:8000/your-endpoint
+  ```
+- The default API key is `changeme`. **Change this in production!**
+
+### Rotating API Keys
+- Update the `API_KEY` environment variable and restart the server.
+
 ## Contributing
 - Add new playbooks/scripts in their respective directories and update config.
 - Use pre-commit hooks for linting and formatting.

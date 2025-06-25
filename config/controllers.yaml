@@ -1,0 +1,16 @@
+controllers:
+  dc1-ansible:
+    type: ansible
+    host: ansible.dc1.example.com
+    ssh_user: ansible
+    ssh_key: /secrets/dc1_ansible.key
+  dc2-ansible:
+    type: ansible
+    host: ansible.dc2.example.com
+    ssh_user: ansible
+    ssh_key: /secrets/dc2_ansible.key
+  dc2-oc:
+    type: oc
+    host: oc.dc2.example.com
+    ssh_user: ocadmin
+    ssh_key: /secrets/dc2_oc.key

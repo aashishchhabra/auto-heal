@@ -1,0 +1,15 @@
+roles:
+  admin:
+    permissions:
+      - controller_override: true
+  operator:
+    permissions:
+      - controller_override: false
+  readonly:
+    permissions:
+      - controller_override: false
+
+api_keys:
+  "admin-key": admin
+  "operator-key": operator
+  "readonly-key": readonly
