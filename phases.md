@@ -6,37 +6,37 @@
 
 ### **1.1 Project Setup**
 - **Story:** Initialize project structure and tooling
-  - Task: Set up repository and directory structure (`src/`, `playbooks/`, `scripts/`, `config/`, `logs/`, `tests/`, `docs/`)
-    - Subtask: Create root project directory
-    - Subtask: Create all required subdirectories
-    - Subtask: Add placeholder files (e.g., `.gitkeep`) to empty dirs
-  - Task: Initialize Python/Node.js/Go project (choose stack)
-    - Subtask: Select language and framework
-    - Subtask: Initialize project with package manager (e.g., `pip`, `npm`, `go mod`)
-    - Subtask: Add main entrypoint file
-  - Task: Set up linting, formatting, and pre-commit hooks
-    - Subtask: Choose linter and formatter (e.g., flake8, black, eslint, prettier)
-    - Subtask: Add config files for linting/formatting
-    - Subtask: Set up pre-commit hooks (e.g., with `pre-commit` or Husky)
-  - Task: Add initial `README.md` and documentation
-    - Subtask: Write project overview
-    - Subtask: Document directory structure
-    - Subtask: Add setup and usage instructions
+  - Task: Set up repository and directory structure (`src/`, `playbooks/`, `scripts/`, `config/`, `logs/`, `tests/`, `docs/`) **[COMPLETE]**
+    - Subtask: Create root project directory **[COMPLETE]**
+    - Subtask: Create all required subdirectories **[COMPLETE]**
+    - Subtask: Add placeholder files (e.g., `.gitkeep`) to empty dirs **[COMPLETE]**
+  - Task: Initialize Python/Node.js/Go project (choose stack) **[COMPLETE]**
+    - Subtask: Select language and framework **[COMPLETE]**
+    - Subtask: Initialize project with package manager (e.g., `pip`, `npm`, `go mod`) **[COMPLETE]**
+    - Subtask: Add main entrypoint file **[COMPLETE]**
+  - Task: Set up linting, formatting, and pre-commit hooks **[COMPLETE]**
+    - Subtask: Choose linter and formatter (e.g., flake8, black, eslint, prettier) **[COMPLETE]**
+    - Subtask: Add config files for linting/formatting **[COMPLETE]**
+    - Subtask: Set up pre-commit hooks (e.g., with `pre-commit` or Husky) **[COMPLETE]**
+  - Task: Add initial `README.md` and documentation **[COMPLETE]**
+    - Subtask: Write project overview **[COMPLETE]**
+    - Subtask: Document directory structure **[COMPLETE]**
+    - Subtask: Add setup and usage instructions **[COMPLETE]**
 
 ### **1.2 Core API Server**
 - **Story:** Implement basic API server with health check
-  - Task: Create `/health` endpoint
-    - Subtask: Define route and handler
-    - Subtask: Return status and version info
-    - Subtask: Add test for health endpoint
-  - Task: Set up basic server framework (Flask/FastAPI/Express/etc.)
-    - Subtask: Install framework dependencies
-    - Subtask: Implement server startup logic
-    - Subtask: Add config for host/port/env
-  - Task: Add structured logging
-    - Subtask: Choose logging library
-    - Subtask: Configure log format (JSON, timestamps, etc.)
-    - Subtask: Add log statements to server startup and health endpoint
+  - Task: Create `/health` endpoint **[COMPLETE]**
+    - Subtask: Define route and handler **[COMPLETE]**
+    - Subtask: Return status and version info **[COMPLETE]**
+    - Subtask: Add test for health endpoint **[COMPLETE]**
+  - Task: Set up basic server framework (Flask/FastAPI/Express/etc.) **[COMPLETE]**
+    - Subtask: Install framework dependencies **[COMPLETE]**
+    - Subtask: Implement server startup logic **[COMPLETE]**
+    - Subtask: Add config for host/port/env **[COMPLETE]**
+  - Task: Add structured logging **[COMPLETE]**
+    - Subtask: Choose logging library **[COMPLETE]**
+    - Subtask: Configure log format (JSON, timestamps, etc.) **[COMPLETE]**
+    - Subtask: Add log statements to server startup and health endpoint **[COMPLETE]**
 
 ---
 
@@ -44,27 +44,27 @@
 
 ### **2.1 API Authentication**
 - **Story:** Secure API endpoints
-  - Task: Implement API key/token authentication
-    - Subtask: Define API key/token storage (env/config)
-    - Subtask: Add middleware to check auth header
-    - Subtask: Return 401 on missing/invalid key
-    - Subtask: Add tests for auth logic
-  - Task: Add middleware for authentication
-    - Subtask: Integrate middleware with all protected endpoints
-    - Subtask: Ensure health endpoint is public (if desired)
-  - Task: Document authentication method
-    - Subtask: Add API key/token usage to README
-    - Subtask: Document how to generate/rotate keys
+  - Task: Implement API key/token authentication **[COMPLETE]**
+    - Subtask: Define API key/token storage (env/config) **[COMPLETE]**
+    - Subtask: Add middleware to check auth header **[COMPLETE]**
+    - Subtask: Return 401 on missing/invalid key **[COMPLETE]**
+    - Subtask: Add tests for auth logic **[COMPLETE]**
+  - Task: Add middleware for authentication **[COMPLETE]**
+    - Subtask: Integrate middleware with all protected endpoints **[COMPLETE]**
+    - Subtask: Ensure health endpoint is public (if desired) **[COMPLETE]**
+  - Task: Document authentication method **[COMPLETE]**
+    - Subtask: Add API key/token usage to README **[COMPLETE]**
+    - Subtask: Document how to generate/rotate keys **[COMPLETE]**
 
 ### **2.2 Authorization**
 - **Story:** Add controller override authorization
-  - Task: Define roles/permissions in config
-    - Subtask: Design roles/permissions structure in config
-    - Subtask: Add example roles (admin, operator, readonly)
-  - Task: Enforce permissions for controller overrides
-    - Subtask: Implement permission checks in override logic
-    - Subtask: Return 403 on unauthorized override
-    - Subtask: Add tests for permission enforcement
+  - Task: Define roles/permissions in config **[COMPLETE]**
+    - Subtask: Design roles/permissions structure in config **[COMPLETE]**
+    - Subtask: Add example roles (admin, operator, readonly) **[COMPLETE]**
+  - Task: Enforce permissions for controller overrides **[COMPLETE]**
+    - Subtask: Implement permission checks in override logic **[COMPLETE]**
+    - Subtask: Return 403 on unauthorized override **[COMPLETE]**
+    - Subtask: Add tests for permission enforcement **[COMPLETE]**
 
 ---
 
@@ -72,74 +72,74 @@
 
 ### **3.1 Action Mapping**
 - **Story:** Map events to actions and controllers
-  - Task: Design `actions.yaml` config structure
-    - Subtask: Define schema for mapping events to actions/controllers
-    - Subtask: Add support for parameters and defaults
-    - Subtask: Provide example config
-  - Task: Implement config loader and validator
-    - Subtask: Write loader to parse YAML/JSON
-    - Subtask: Validate config against schema
+  - Task: Design `actions.yaml` config structure **[COMPLETE]**
+    - Subtask: Define schema for mapping events to actions/controllers **[COMPLETE]**
+    - Subtask: Add support for parameters and defaults **[COMPLETE]**
+    - Subtask: Provide example config **[COMPLETE]**
+  - Task: Implement config loader and validator **[COMPLETE]**
+    - Subtask: Write loader to parse YAML/JSON **[COMPLETE]**
+    - Subtask: Validate config against schema **[COMPLETE]**
     - Subtask: Handle config reloads (optional)
-  - Task: Support parameterization in mappings
-    - Subtask: Allow event payload to override parameters
-    - Subtask: Document parameterization in config
+  - Task: Support parameterization in mappings **[COMPLETE]**
+    - Subtask: Allow event payload to override parameters **[COMPLETE]**
+    - Subtask: Document parameterization in config **[COMPLETE]**
 
 ### **3.2 Controller Inventory**
 - **Story:** Manage controller/client nodes
-  - Task: Design `controllers.yaml` structure
-    - Subtask: Define schema for controller/client metadata
-    - Subtask: Add example entries for Ansible, oc, etc.
-  - Task: Implement controller inventory loader
-    - Subtask: Write loader to parse controllers config
-    - Subtask: Validate controller types and required fields
-  - Task: Validate controller existence and type
-    - Subtask: Check controller exists before execution
-    - Subtask: Return error if controller is missing/invalid
+  - Task: Design `controllers.yaml` structure **[COMPLETE]**
+    - Subtask: Define schema for controller/client metadata **[COMPLETE]**
+    - Subtask: Add example entries for Ansible, oc, etc. **[COMPLETE]**
+  - Task: Implement controller inventory loader **[COMPLETE]**
+    - Subtask: Write loader to parse controllers config **[COMPLETE]**
+    - Subtask: Validate controller types and required fields **[COMPLETE]**
+  - Task: Validate controller existence and type **[COMPLETE]**
+    - Subtask: Check controller exists before execution **[COMPLETE]**
+    - Subtask: Return error if controller is missing/invalid **[COMPLETE]**
 
 ### **3.3 Action Executor**
 - **Story:** Execute playbooks/scripts on controllers
-  - Task: Implement SSH/API execution logic
-    - Subtask: Implement SSH connection logic
+  - Task: Implement SSH/API execution logic **[COMPLETE]**
+    - Subtask: Implement SSH connection logic **[COMPLETE]**
     - Subtask: Implement API call logic (if needed)
-    - Subtask: Handle connection errors and timeouts
-  - Task: Support Ansible playbooks and ad-hoc scripts
-    - Subtask: Add logic to run Ansible playbooks via CLI
-    - Subtask: Add logic to run shell/Python scripts
-    - Subtask: Support passing parameters to playbooks/scripts
-  - Task: Capture and return execution output and errors
-    - Subtask: Capture stdout/stderr from executions
-    - Subtask: Parse and format results for API response
-    - Subtask: Log execution details
+    - Subtask: Handle connection errors and timeouts **[COMPLETE]**
+  - Task: Support Ansible playbooks and ad-hoc scripts **[COMPLETE]**
+    - Subtask: Add logic to run Ansible playbooks via CLI **[COMPLETE]**
+    - Subtask: Add logic to run shell/Python scripts **[COMPLETE]**
+    - Subtask: Support passing parameters to playbooks/scripts **[COMPLETE]**
+  - Task: Capture and return execution output and errors **[COMPLETE]**
+    - Subtask: Capture stdout/stderr from executions **[COMPLETE]**
+    - Subtask: Parse and format results for API response **[COMPLETE]**
+    - Subtask: Log execution details **[COMPLETE]**
 
 ---
 
 ## **Phase 4: Webhook Handling & Dynamic Routing**
 
 ### **4.1 Webhook Endpoint**
-- **Story:** Handle incoming webhooks
-  - Task: Implement `/webhook` endpoint
-    - Subtask: Define route and handler
-    - Subtask: Accept and parse JSON payloads
-    - Subtask: Return 200/400/500 as appropriate
-  - Task: Parse and validate payloads
-    - Subtask: Define payload schema
-    - Subtask: Validate required fields (event_type, target, etc.)
-    - Subtask: Return error on invalid payload
-  - Task: Extract event type, target, and controller override
-    - Subtask: Parse fields from payload
-    - Subtask: Pass extracted info to action mapping logic
+- **Story:** Handle incoming webhooks **[COMPLETE]**
+  - Task: Implement `/webhook` endpoint **[COMPLETE]**
+    - Subtask: Define route and handler **[COMPLETE]**
+    - Subtask: Accept and parse JSON payloads **[COMPLETE]**
+    - Subtask: Return 200/400/500 as appropriate **[COMPLETE]**
+  - Task: Parse and validate payloads **[COMPLETE]**
+    - Subtask: Define payload schema **[COMPLETE]**
+    - Subtask: Validate required fields (event_type, target, etc.) **[COMPLETE]**
+    - Subtask: Return error on invalid payload **[COMPLETE]**
+  - Task: Extract event type, target, and controller override **[COMPLETE]**
+    - Subtask: Parse fields from payload **[COMPLETE]**
+    - Subtask: Pass extracted info to action mapping logic **[COMPLETE]**
 
 ### **4.2 Dynamic Controller Selection**
-- **Story:** Support controller override from webhook
-  - Task: Check for `controller_override` in payload
-    - Subtask: Parse override field if present
-    - Subtask: Validate override value
-  - Task: Validate and authorize override
-    - Subtask: Check permissions for override
-    - Subtask: Return error if not allowed
-  - Task: Fallback to default controller if not specified
-    - Subtask: Use mapping config if no override
-    - Subtask: Log which controller was selected
+- **Story:** Support controller override from webhook **[COMPLETE]**
+  - Task: Check for `controller_override` in payload **[COMPLETE]**
+    - Subtask: Parse override field if present **[COMPLETE]**
+    - Subtask: Validate override value **[COMPLETE]**
+  - Task: Validate and authorize override **[COMPLETE]**
+    - Subtask: Check permissions for override **[COMPLETE]**
+    - Subtask: Return error if not allowed **[COMPLETE]**
+  - Task: Fallback to default controller if not specified **[COMPLETE]**
+    - Subtask: Use mapping config if no override **[COMPLETE]**
+    - Subtask: Log which controller was selected **[COMPLETE]**
 
 ---
 
@@ -148,31 +148,31 @@
 ### **5.1 Structured Logging**
 - **Story:** Implement structured and contextual logging
   - Task: Log all requests, actions, controllers, and results
-    - Subtask: Add request logging middleware
-    - Subtask: Log action execution details
-    - Subtask: Log controller selection and overrides
+    - Subtask: Add request logging middleware **[COMPLETE]**
+    - Subtask: Log action execution details **[COMPLETE]**
+    - Subtask: Log controller selection and overrides **[COMPLETE]**
   - Task: Store logs in `logs/` directory
-    - Subtask: Configure log file rotation/retention
-    - Subtask: Ensure logs are structured (JSON, etc.)
+    - Subtask: Configure log file rotation/retention **[COMPLETE]**
+    - Subtask: Ensure logs are structured (JSON, etc.) **[COMPLETE]**
 
 ### **5.2 Audit Trail**
 - **Story:** Maintain execution audit trail
   - Task: Record action details, user, controller, and outcome
-    - Subtask: Define audit log schema
-    - Subtask: Write audit entries on every action
+    - Subtask: Define audit log schema **[COMPLETE]**
+    - Subtask: Write audit entries on every action **[COMPLETE]**
   - Task: Implement `/audit` endpoint (secured) for audit retrieval
-    - Subtask: Define route and handler
-    - Subtask: Secure endpoint with authentication/authorization
-    - Subtask: Support filtering by date, action, user
+    - Subtask: Define route and handler **[COMPLETE]**
+    - Subtask: Secure endpoint with authentication/authorization **[COMPLETE]**
+    - Subtask: Support filtering by date, action, user **[COMPLETE]**
 
 ### **5.3 Error Handling**
 - **Story:** Robust error handling and reporting
   - Task: Standardize error responses
-    - Subtask: Define error response schema
-    - Subtask: Return consistent error codes/messages
+    - Subtask: Define error response schema **[COMPLETE]**
+    - Subtask: Return consistent error codes/messages **[COMPLETE]**
   - Task: Log errors and failed attempts
-    - Subtask: Log all exceptions and failures
-    - Subtask: Include context in error logs
+    - Subtask: Log all exceptions and failures **[COMPLETE]**
+    - Subtask: Include context in error logs **[COMPLETE]**
 
 ---
 

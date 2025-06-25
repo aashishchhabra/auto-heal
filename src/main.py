@@ -1,15 +1,18 @@
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.responses import JSONResponse
-from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
-from src.actions import get_action_config, get_controller_config
-from src.executor import ActionExecutor
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
+from typing import Optional, Dict, Any, List
+from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import sys
 import json
 import datetime
-from pydantic import BaseModel, Field, ValidationError
-from typing import Optional, Dict, Any
+from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
+from src.actions import get_action_config, get_controller_config
+from src.executor import ActionExecutor
+import logging.handlers
 
 
 # Configure structured logging
@@ -31,6 +34,25 @@ handler.setFormatter(JsonFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger("autoheal")
 
+# Configure structured logging with file rotation
+LOG_DIR = os.path.join(os.path.dirname(__file__), "../logs")
+LOG_PATH = os.path.join(LOG_DIR, "autoheal.log")
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+file_handler = logging.handlers.RotatingFileHandler(
+    LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=5
+)
+file_handler.setFormatter(JsonFormatter())
+logger.addHandler(file_handler)
+
+# Configure file handler with rotation for logs/app.log
+APP_LOG_PATH = os.path.join(LOG_DIR, "app.log")
+file_handler = logging.handlers.RotatingFileHandler(
+    APP_LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=5
+)
+file_handler.setFormatter(JsonFormatter())
+logger.addHandler(file_handler)
+
 app = FastAPI()
 app.add_middleware(APIKeyAuthMiddleware)
 executor = ActionExecutor()
@@ -39,9 +61,21 @@ AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
 
 
 def write_audit_log(entry: dict):
-    entry["timestamp"] = datetime.datetime.utcnow().isoformat() + "Z"
+    audit_entry = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "user": entry.get("user"),
+        "role": entry.get("role"),
+        "action": entry.get("action"),
+        "controller": entry.get("controller"),
+        "controller_type": entry.get("controller_type"),
+        "parameters": entry.get("parameters"),
+        "execution": entry.get("execution"),
+        "client_ip": entry.get("client_ip"),
+        "status": entry.get("execution", {}).get("success"),
+        "error": entry.get("execution", {}).get("error"),
+    }
     with open(AUDIT_LOG_PATH, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+        f.write(json.dumps(audit_entry) + "\n")
 
 
 @app.on_event("startup")
@@ -80,6 +114,27 @@ class WebhookPayload(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Action parameters"
     )
+
+
+# Request logging middleware
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        logger.info(
+            json.dumps(
+                {
+                    "event": "request",
+                    "method": request.method,
+                    "path": request.url.path,
+                    "client_ip": request.client.host if request.client else None,
+                }
+            )
+        )
+        response = await call_next(request)
+        return response
+
+
+# Add the request logging middleware
+app.add_middleware(RequestLoggingMiddleware)
 
 
 @app.post("/webhook")
@@ -163,3 +218,140 @@ async def webhook(request: Request):
         "controller_type": controller_config.get("type"),
         "execution": exec_result.as_dict(),
     }
+
+
+# Standard error response schema
+class ErrorResponse(BaseModel):
+    detail: str
+    code: int
+    errors: Optional[Any] = None
+
+
+# Global exception handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.error(
+        json.dumps(
+            {
+                "event": "error",
+                "type": "http_exception",
+                "path": request.url.path,
+                "client_ip": request.client.host if request.client else None,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            }
+        )
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(detail=exc.detail, code=exc.status_code).dict(),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(
+        json.dumps(
+            {
+                "event": "error",
+                "type": "validation_error",
+                "path": request.url.path,
+                "client_ip": request.client.host if request.client else None,
+                "errors": exc.errors(),
+            }
+        )
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=ErrorResponse(
+            detail="Validation error", code=422, errors=exc.errors()
+        ).dict(),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        json.dumps(
+            {
+                "event": "error",
+                "type": "unhandled_exception",
+                "path": request.url.path,
+                "client_ip": request.client.host if request.client else None,
+                "error": str(exc),
+            }
+        )
+    )
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(detail="Internal server error", code=500).dict(),
+    )
+
+
+class AuditQueryParams(BaseModel):
+    start: Optional[str] = None  # ISO date string
+    end: Optional[str] = None
+    action: Optional[str] = None
+    user: Optional[str] = None
+    role: Optional[str] = None
+    controller: Optional[str] = None
+    limit: Optional[int] = 100
+
+
+def filter_audit_entry(entry, params: AuditQueryParams):
+    # Date filtering
+    if params.start or params.end:
+        ts = entry.get("timestamp")
+        if ts:
+            if params.start and ts < params.start:
+                return False
+            if params.end and ts > params.end:
+                return False
+    # Action, user, role, controller filtering
+    if params.action and entry.get("action") != params.action:
+        return False
+    if params.user and entry.get("user") != params.user:
+        return False
+    if params.role and entry.get("role") != params.role:
+        return False
+    if params.controller and entry.get("controller") != params.controller:
+        return False
+    return True
+
+
+@app.get("/audit", response_model=List[dict])
+async def get_audit(
+    request: Request,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    action: Optional[str] = None,
+    user: Optional[str] = None,
+    role: Optional[str] = None,
+    controller: Optional[str] = None,
+    limit: int = 100,
+):
+    api_key = request.headers.get("x-api-key")
+    role_val = get_role_from_api_key(api_key)
+    if not has_permission(role_val, "audit_read"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    params = AuditQueryParams(
+        start=start,
+        end=end,
+        action=action,
+        user=user,
+        role=role,
+        controller=controller,
+        limit=limit,
+    )
+    results = []
+    with open(AUDIT_LOG_PATH, "r") as f:
+        for line in reversed(list(f)):
+            try:
+                entry = json.loads(line)
+                if filter_audit_entry(entry, params):
+                    results.append(entry)
+                    if len(results) >= params.limit:
+                        break
+            except Exception:
+                continue
+    return results
