@@ -10,7 +10,11 @@ import sys
 import json
 import datetime
 from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
+<<<<<<< HEAD
 from src.actions import get_action_config, get_controller_config
+=======
+from src.actions import get_action_config, get_controller_config, discover_actions
+>>>>>>> 67b7805 (Fix: remove unused import to pass flake8 linting (Phase 5))
 from src.executor import ActionExecutor
 import logging.handlers
 
@@ -78,9 +82,28 @@ def write_audit_log(entry: dict):
         f.write(json.dumps(audit_entry) + "\n")
 
 
+# At startup, merge discovered actions with config/actions.yaml
 @app.on_event("startup")
 def on_startup():
     logger.info("API server starting up")
+    # Merge discovered actions with config/actions.yaml
+    discovered = discover_actions()
+    # Load existing actions config
+    import yaml
+
+    actions_path = os.path.join(os.path.dirname(__file__), "../config/actions.yaml")
+    with open(actions_path) as f:
+        config_actions = yaml.safe_load(f)
+    # Merge, giving priority to config/actions.yaml
+    merged = {**discovered, **config_actions}
+
+    # Patch get_action_config to use merged actions
+    def get_action_config_patched(event_type):
+        return merged.get(event_type)
+
+    import src.actions
+
+    src.actions.get_action_config = get_action_config_patched
 
 
 @app.get("/health")

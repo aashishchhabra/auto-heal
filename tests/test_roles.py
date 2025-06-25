@@ -43,7 +43,7 @@ def test_webhook_action_mapping():
     assert response.status_code == 200
     data = response.json()
     assert data["action"] == "restart_service"
-    assert data["controller"] == "dc1-ansible"
+    assert data["controller"] == "ansible_local"
     assert data["parameters"]["service_name"] == "nginx"
     assert data["controller_type"] == "ansible"
 

@@ -2,18 +2,16 @@ actions:
   restart_service:
     description: Restart a system service on a host
     playbook: playbooks/restart_service.yml
-    default_controller: dc1-ansible
+    default_controller: ansible_local
     parameters:
-      service_name: null
+      service_name: "nginx"
+
   cleanup_disk:
     description: Clean up disk space on a host
     script: scripts/cleanup_disk.sh
-    default_controller: dc2-ansible
-    parameters:
-      path: /tmp
+    default_controller: local
+
   health_check:
     description: Run a health check command
     script: scripts/health_check.sh
-    default_controller: dc1-ansible
-    parameters:
-      check_type: basic
+    default_controller: local

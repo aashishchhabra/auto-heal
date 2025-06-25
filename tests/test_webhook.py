@@ -32,7 +32,7 @@ def test_webhook_valid_playbook(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["action"] == "restart_service"
-    assert data["controller"] == "dc1-ansible"
+    assert data["controller"] == "ansible_local"  # Updated to match config
     assert data["parameters"]["service_name"] == "nginx"
     assert data["execution"]["success"] is True
 
@@ -55,7 +55,7 @@ def test_webhook_valid_script(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["action"] == "cleanup_disk"
-    assert data["controller"] == "dc2-ansible"
+    assert data["controller"] == "local"  # Updated to match config
     assert data["parameters"]["path"] == "/tmp"
     assert data["execution"]["success"] is True
 

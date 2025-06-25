@@ -14,3 +14,10 @@ controllers:
     host: oc.dc2.example.com
     ssh_user: ocadmin
     ssh_key: /secrets/dc2_oc.key
+  ansible_local:
+    type: ansible
+    host: localhost
+    ssh_user: root
+    ssh_key: /root/.ssh/id_rsa
+  local:
+    type: local

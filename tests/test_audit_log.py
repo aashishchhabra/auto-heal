@@ -55,7 +55,8 @@ def test_audit_log_written_on_webhook(monkeypatch):
     assert entry["user"] == "admin-key"
     assert entry["role"] == "admin"
     assert entry["action"] == "restart_service"
-    assert entry["controller"] == "dc1-ansible"
+    # Updated to match the config default_controller
+    assert entry["controller"] == "ansible_local"
     assert entry["parameters"]["service_name"] == "nginx"
     assert entry["execution"]["success"] is True
     assert "timestamp" in entry

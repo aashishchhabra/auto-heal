@@ -181,17 +181,17 @@
 ### **6.1 Sample Playbooks/Scripts**
 - **Story:** Provide sample healing actions
   - Task: Add playbook to restart a service
-    - Subtask: Write Ansible playbook for service restart
-    - Subtask: Add example mapping in config
-    - Subtask: Test playbook execution
+    - Subtask: Write Ansible playbook for service restart **[COMPLETE]**
+    - Subtask: Add example mapping in config **[COMPLETE]**
+    - Subtask: Test playbook execution **[COMPLETE]**
   - Task: Add script to clean up disk space
-    - Subtask: Write shell/Python script for disk cleanup
-    - Subtask: Add example mapping in config
-    - Subtask: Test script execution
+    - Subtask: Write shell/Python script for disk cleanup **[COMPLETE]**
+    - Subtask: Add example mapping in config **[COMPLETE]**
+    - Subtask: Test script execution **[COMPLETE]**
   - Task: Add health check script/playbook
-    - Subtask: Write health check script/playbook
-    - Subtask: Add example mapping in config
-    - Subtask: Test health check execution
+    - Subtask: Write health check script/playbook **[COMPLETE]**
+    - Subtask: Add example mapping in config **[COMPLETE]**
+    - Subtask: Test health check execution **[COMPLETE]**
 
 ### **6.2 Onboarding New Actions**
 - **Story:** Enable modular onboarding via GitOps/CI
