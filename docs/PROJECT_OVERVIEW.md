@@ -1,9 +1,9 @@
-# Auto-Healer API Server
+# Project Overview
 
-## Overview
-A modular, production-ready API server for automated remediation and healing actions, supporting Ansible playbooks, ad-hoc scripts, and multi-controller environments.
+Auto-Healer API Server is a modular, production-ready API server for automated remediation and healing actions, supporting Ansible playbooks, ad-hoc scripts, and multi-controller environments.
 
 ## Directory Structure
+
 - `src/` - Application source code
 - `playbooks/` - Ansible playbooks for remediation
 - `scripts/` - Shell/Python scripts for ad-hoc actions
@@ -12,29 +12,29 @@ A modular, production-ready API server for automated remediation and healing act
 - `tests/` - Unit and integration tests
 - `docs/` - Documentation
 
-## Setup
-1. Create and activate a Python virtual environment:
+## Setup and Usage Instructions
+
+1. **Create and activate a Python virtual environment:**
    ```zsh
    python3 -m venv venv
    source venv/bin/activate
    ```
-2. Install dependencies:
+2. **Install dependencies:**
    ```zsh
    pip install -r requirements.txt
    ```
-3. Run the API server:
+3. **Run the API server:**
    ```zsh
    uvicorn src.main:app --reload
    ```
-
-## Usage
-- Webhook endpoint: `/webhook`
-- Health check: `/health`
-- Audit log: `/audit` (secured)
+4. **Pre-commit hooks:**
+   - Pre-commit hooks are set up for linting and formatting. To run them manually:
+     ```zsh
+     pre-commit run --all-files
+     ```
 
 ## Contributing
-- Use pre-commit hooks for linting and formatting.
 - Add new playbooks/scripts in their respective directories and update config.
+- Use pre-commit hooks for linting and formatting.
 
-## License
-MIT
+---
