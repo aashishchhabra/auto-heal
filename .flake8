@@ -4,3 +4,4 @@ max-line-length = 88
 exclude = .git,venv,__pycache__
 per-file-ignores =
     tests/*: E402
+    src/main.py: E402

@@ -1,21 +1,21 @@
 import logging
-from fastapi import FastAPI, Request, status, HTTPException
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 from typing import Optional, Dict, Any, List
-from starlette.middleware.base import BaseHTTPMiddleware
+from contextlib import asynccontextmanager
+import datetime
 import os
 import sys
 import json
-import datetime
+from threading import Lock
+
 from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
-
-
 from src.actions import get_action_config, get_controller_config, discover_actions
-
 from src.executor import ActionExecutor
 import logging.handlers
+from src.notifications import notification_sender
 
 
 # Configure structured logging
@@ -65,7 +65,9 @@ AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
 
 def write_audit_log(entry: dict):
     audit_entry = {
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.datetime.now(datetime.UTC)
+        .isoformat()
+        .replace("+00:00", "Z"),
         "user": entry.get("user"),
         "role": entry.get("role"),
         "action": entry.get("action"),
@@ -81,9 +83,9 @@ def write_audit_log(entry: dict):
         f.write(json.dumps(audit_entry) + "\n")
 
 
-# At startup, merge discovered actions with config/actions.yaml
-@app.on_event("startup")
-def on_startup():
+# Replace deprecated @app.on_event("startup") with lifespan event
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("API server starting up")
     # Merge discovered actions with config/actions.yaml
     discovered = discover_actions()
@@ -103,6 +105,11 @@ def on_startup():
     import src.actions
 
     src.actions.get_action_config = get_action_config_patched
+    yield
+    # Place any shutdown logic here
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/health")
@@ -136,27 +143,34 @@ class WebhookPayload(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(
         default_factory=dict, description="Action parameters"
     )
+    dry_run: Optional[bool] = Field(
+        default=False, description="If true, simulate execution (dry-run)"
+    )
+    approval_required: Optional[bool] = Field(
+        default=False, description="If true, require approval before execution"
+    )
 
 
-# Request logging middleware
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        logger.info(
-            json.dumps(
-                {
-                    "event": "request",
-                    "method": request.method,
-                    "path": request.url.path,
-                    "client_ip": request.client.host if request.client else None,
-                }
-            )
-        )
-        response = await call_next(request)
-        return response
+# In-memory approval queue (thread-safe)
+approval_queue = []
+approval_lock = Lock()
+
+# Approval entry structure:
+# {
+#   "id": <unique>,
+#   "payload": <WebhookPayload dict>,
+#   "status": "pending"|"approved"|"rejected",
+#   "result": None|dict
+# }
+import uuid
 
 
-# Add the request logging middleware
-app.add_middleware(RequestLoggingMiddleware)
+def get_approval_entry(entry_id):
+    with approval_lock:
+        for entry in approval_queue:
+            if entry["id"] == entry_id:
+                return entry
+    return None
 
 
 @app.post("/webhook")
@@ -196,23 +210,45 @@ async def webhook(request: Request):
     # Parameter merging
     params = action_config.get("parameters", {}).copy()
     params.update(payload.parameters or {})
-    # Execute action
+    dry_run = getattr(payload, "dry_run", False)
+    approval_required = getattr(payload, "approval_required", False)
+    if approval_required:
+        # Queue for approval, do not execute
+        entry_id = str(uuid.uuid4())
+        approval_entry = {
+            "id": entry_id,
+            "payload": raw_payload,
+            "status": "pending",
+            "result": None,
+            "requested_by": api_key,
+            "role": role,
+            "controller": controller_name,
+        }
+        with approval_lock:
+            approval_queue.append(approval_entry)
+        logger.info(f"Action '{event_type}' queued for approval (id={entry_id})")
+        return {
+            "approval_id": entry_id,
+            "status": "pending",
+            "detail": "Action requires approval before execution.",
+        }
+    # Dry-run support
     exec_result = None
     if "playbook" in action_config:
         playbook_path = action_config["playbook"]
         logger.info(
             f"Executing playbook '{playbook_path}' on controller '{controller_name}' "
-            f"with params {params}"
+            f"with params {params} (dry_run={dry_run})"
         )
-        exec_result = executor.run_playbook(playbook_path, params)
+        exec_result = executor.run_playbook(playbook_path, params, dry_run=dry_run)
     elif "script" in action_config:
         script_path = action_config["script"]
         logger.info(
             f"Executing script '{script_path}' on controller '{controller_name}' "
-            f"with params {params}"
+            f"with params {params} (dry_run={dry_run})"
         )
         args = [str(v) for v in params.values()] if params else None
-        exec_result = executor.run_script(script_path, args)
+        exec_result = executor.run_script(script_path, args, dry_run=dry_run)
     else:
         logger.error(f"No executable defined for action '{event_type}'")
         return JSONResponse(
@@ -230,8 +266,18 @@ async def webhook(request: Request):
         "parameters": params,
         "execution": exec_result.as_dict(),
         "client_ip": request.client.host if request.client else None,
+        "dry_run": dry_run,
     }
     write_audit_log(audit_entry)
+    # Send notifications (Slack & Teams)
+    status = "success" if exec_result.success else "failure"
+    details = exec_result.as_dict().get("stdout") or exec_result.as_dict().get("error")
+    notification_sender.send_slack_notification(
+        event_type, controller_name, api_key, status, details=details
+    )
+    notification_sender.send_teams_notification(
+        event_type, controller_name, api_key, status, details=details
+    )
     return {
         "action": event_type,
         "controller": controller_name,
@@ -239,6 +285,7 @@ async def webhook(request: Request):
         "role": role,
         "controller_type": controller_config.get("type"),
         "execution": exec_result.as_dict(),
+        "dry_run": dry_run,
     }
 
 
@@ -266,7 +313,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(detail=exc.detail, code=exc.status_code).dict(),
+        content=ErrorResponse(detail=exc.detail, code=exc.status_code).model_dump(),
     )
 
 
@@ -287,7 +334,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=ErrorResponse(
             detail="Validation error", code=422, errors=exc.errors()
-        ).dict(),
+        ).model_dump(),
     )
 
 
@@ -306,7 +353,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=500,
-        content=ErrorResponse(detail="Internal server error", code=500).dict(),
+        content=ErrorResponse(detail="Internal server error", code=500).model_dump(),
     )
 
 
@@ -377,3 +424,96 @@ async def get_audit(
             except Exception:
                 continue
     return results
+
+
+@app.get("/approvals")
+def list_approvals():
+    with approval_lock:
+        return [
+            {k: v for k, v in entry.items() if k != "result"}
+            for entry in approval_queue
+        ]
+
+
+@app.post("/approvals/{approval_id}/approve")
+def approve_approval(approval_id: str):
+    entry = get_approval_entry(approval_id)
+    if not entry:
+        return JSONResponse(status_code=404, content={"detail": "Approval not found"})
+    if entry["status"] != "pending":
+        return JSONResponse(
+            status_code=400, content={"detail": f"Already {entry['status']}"}
+        )
+    # Execute the action now
+    payload = WebhookPayload(**entry["payload"])
+    event_type = payload.event_type
+    action_config = get_action_config(event_type)
+    controller_name = payload.controller_override or action_config.get(
+        "default_controller"
+    )
+    controller_config = get_controller_config(controller_name)
+    params = action_config.get("parameters", {}).copy()
+    params.update(payload.parameters or {})
+    dry_run = getattr(payload, "dry_run", False)
+    exec_result = None
+    if "playbook" in action_config:
+        playbook_path = action_config["playbook"]
+        exec_result = executor.run_playbook(playbook_path, params, dry_run=dry_run)
+    elif "script" in action_config:
+        script_path = action_config["script"]
+        args = [str(v) for v in params.values()] if params else None
+        exec_result = executor.run_script(script_path, args, dry_run=dry_run)
+    else:
+        entry["status"] = "rejected"
+        entry["result"] = {"error": "No playbook or script defined for action"}
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "No playbook or script defined for action"},
+        )
+    entry["status"] = "approved"
+    entry["result"] = exec_result.as_dict()
+    # Write audit log
+    audit_entry = {
+        "user": entry["requested_by"],
+        "role": entry["role"],
+        "action": event_type,
+        "controller": controller_name,
+        "controller_type": controller_config.get("type"),
+        "parameters": params,
+        "execution": exec_result.as_dict(),
+        "client_ip": None,
+        "dry_run": dry_run,
+        "approval_id": approval_id,
+        "approval_status": "approved",
+    }
+    write_audit_log(audit_entry)
+    return {"status": "approved", "result": exec_result.as_dict()}
+
+
+@app.post("/approvals/{approval_id}/reject")
+def reject_approval(approval_id: str):
+    entry = get_approval_entry(approval_id)
+    if not entry:
+        return JSONResponse(status_code=404, content={"detail": "Approval not found"})
+    if entry["status"] != "pending":
+        return JSONResponse(
+            status_code=400, content={"detail": f"Already {entry['status']}"}
+        )
+    entry["status"] = "rejected"
+    entry["result"] = {"error": "Rejected by approver"}
+    # Write audit log
+    audit_entry = {
+        "user": entry["requested_by"],
+        "role": entry["role"],
+        "action": entry["payload"].get("event_type"),
+        "controller": entry["controller"],
+        "controller_type": None,
+        "parameters": entry["payload"].get("parameters"),
+        "execution": {"success": False, "error": "Rejected by approver"},
+        "client_ip": None,
+        "dry_run": entry["payload"].get("dry_run", False),
+        "approval_id": approval_id,
+        "approval_status": "rejected",
+    }
+    write_audit_log(audit_entry)
+    return {"status": "rejected"}

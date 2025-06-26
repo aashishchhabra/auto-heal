@@ -30,6 +30,8 @@ def run_around_tests():
 def test_audit_log_written_on_webhook(monkeypatch):
     # Patch executor to avoid real execution
     class DummyResult:
+        success = True
+
         def as_dict(self):
             return {
                 "success": True,
@@ -64,6 +66,8 @@ def test_audit_log_written_on_webhook(monkeypatch):
 
 def test_audit_log_written_on_script(monkeypatch):
     class DummyResult:
+        success = True
+
         def as_dict(self):
             return {
                 "success": True,
@@ -90,6 +94,8 @@ def test_audit_log_written_on_script(monkeypatch):
 
 def test_audit_log_on_error(monkeypatch):
     class DummyResult:
+        success = False
+
         def as_dict(self):
             return {
                 "success": False,

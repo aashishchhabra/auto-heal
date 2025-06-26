@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          source venv/bin/activate
+          pip install flake8 black
+          flake8 src/ tests/
+
+      - name: Check formatting with black
+        run: |
+          source venv/bin/activate
+          black --check src/ tests/
+
+      - name: Run tests with coverage
+        run: |
+          source venv/bin/activate
+          pip install pytest pytest-cov
+          pytest --cov=src --cov-report=term --cov-report=xml > result.log || (cat result.log && exit 1)
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          COVERAGE=$(awk '/TOTAL/ {print $4}' result.log | tail -1 | sed 's/%//')
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+
+      - name: Update coverage badge in README (success)
+        if: success() && github.ref == 'refs/heads/main'
+        run: |
+          BADGE_URL="https://img.shields.io/badge/coverage-${{ env.COVERAGE }}%25-brightgreen"
+          sed -i "s|\[![Coverage Status].*|[![Coverage Status]($BADGE_URL)](https://github.com/your-org/auto-heal/actions)|" README.md
+          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions"
+          git add README.md
+          git commit -m "chore: update coverage badge [skip ci]" || echo "No changes to commit"
+          git push || echo "No changes to push"
+
+      - name: Update build status badge in README (success)
+        if: success() && github.ref == 'refs/heads/main'
+        run: |
+          sed -i "s|\[![Build Status].*|[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-org/auto-heal/actions)|" README.md
+          git add README.md
+          git commit -m "chore: update build badge [skip ci]" || echo "No changes to commit"
+          git push || echo "No changes to push"
+
+      - name: Update build status badge in README (failure)
+        if: failure() && github.ref == 'refs/heads/main'
+        run: |
+          sed -i "s|\[![Build Status].*|[![Build Status](https://img.shields.io/badge/build-failing-red)](https://github.com/your-org/auto-heal/actions)|" README.md
+          git add README.md
+          git commit -m "chore: update build badge to failing [skip ci]" || echo "No changes to commit"
+          git push || echo "No changes to push"
+
+      - name: Check requirements.txt is up-to-date
+        run: |
+          source venv/bin/activate
+          pip install pip-tools
+          pip-compile --generate-hashes --output-file requirements.lock requirements.txt
+          diff -q requirements.txt requirements.lock && echo "requirements.txt is up-to-date" || (echo "requirements.txt is not up-to-date!" && exit 1)
+
+      - name: Security scan with bandit
+        run: |
+          source venv/bin/activate
+          pip install bandit
+          bandit -r src/ -ll
+
+      - name: Check for TODOs and FIXMEs
+        run: |
+          ! grep -rE 'TODO|FIXME' src/ || (echo 'Found TODO or FIXME in code!' && exit 1)
+
+      - name: Validate README.md links
+        run: |
+          pip install markdown-link-check
+          npx markdown-link-check README.md

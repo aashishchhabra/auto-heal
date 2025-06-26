@@ -32,8 +32,24 @@ class ActionExecutionResult:
 
 class ActionExecutor:
     def run_playbook(
-        self, playbook_path: str, extra_vars: Optional[Dict[str, Any]] = None
+        self,
+        playbook_path: str,
+        extra_vars: Optional[Dict[str, Any]] = None,
+        dry_run: bool = False,
     ) -> ActionExecutionResult:
+        if dry_run:
+            msg = (
+                f"[DRY-RUN] Would execute playbook: {playbook_path} with vars: "
+                f"{extra_vars}"
+            )
+            logger.info(msg)
+            return ActionExecutionResult(
+                success=True,
+                stdout=msg,
+                stderr="",
+                exit_code=0,
+                error=None,
+            )
         cmd = ["ansible-playbook", playbook_path]
         if extra_vars:
             extra_vars_str = " ".join(f"{k}='{v}'" for k, v in extra_vars.items())
@@ -52,8 +68,18 @@ class ActionExecutor:
             return ActionExecutionResult(False, "", "", 1, error=str(e))
 
     def run_script(
-        self, script_path: str, args: Optional[list] = None
+        self, script_path: str, args: Optional[list] = None, dry_run: bool = False
     ) -> ActionExecutionResult:
+        if dry_run:
+            msg = f"[DRY-RUN] Would execute script: {script_path} with args: {args}"
+            logger.info(msg)
+            return ActionExecutionResult(
+                success=True,
+                stdout=msg,
+                stderr="",
+                exit_code=0,
+                error=None,
+            )
         cmd = [script_path]
         if args:
             cmd += args

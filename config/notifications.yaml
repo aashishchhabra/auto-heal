@@ -1,0 +1,16 @@
+# Notification configuration for Auto-Healer
+slack:
+  enabled: true
+  webhook_url: "https://hooks.slack.com/services/REPLACE_WITH_REAL_URL"
+  channel: "#autoheal-notifications"
+  username: "AutoHealerBot"
+  notify_on:
+    - success
+    - failure
+# teams:
+#   enabled: false
+#   webhook_url: "https://outlook.office.com/webhook/REPLACE_WITH_REAL_URL"
+#   channel: "AutoHeal"
+#   notify_on:
+#     - success
+#     - failure

@@ -194,38 +194,38 @@
     - Subtask: Test health check execution **[COMPLETE]**
 
 ### **6.2 Onboarding New Actions**
-- **Story:** Enable modular onboarding via GitOps/CI
-  - Task: Document process for adding new playbooks/scripts
-    - Subtask: Write onboarding guide in `docs/`
-    - Subtask: Add PR review checklist for new actions
-  - Task: Auto-discover new actions from `playbooks/` and `scripts/`
-    - Subtask: Implement directory scan logic
-    - Subtask: Update config loader to support auto-discovery
+- **Story:** Enable modular onboarding via GitOps/CI **[COMPLETE]**
+  - Task: Document process for adding new playbooks/scripts **[COMPLETE]**
+    - Subtask: Write onboarding guide in `docs/` **[COMPLETE]**
+    - Subtask: Add PR review checklist for new actions **[COMPLETE]**
+  - Task: Auto-discover new actions from `playbooks/` and `scripts/` **[COMPLETE]**
+    - Subtask: Implement directory scan logic **[COMPLETE]**
+    - Subtask: Update config loader to support auto-discovery **[COMPLETE]**
 
 ---
 
 ## **Phase 7: Notifications & Advanced Features**
 
 ### **7.1 Notification Hooks**
-- **Story:** Integrate with Slack/Teams for notifications
-  - Task: Add notification config
-    - Subtask: Define notification settings in config
-    - Subtask: Add example for Slack/Teams
-  - Task: Implement notification sending on action execution/failure
-    - Subtask: Integrate with Slack/Teams API
-    - Subtask: Send notifications on success/failure
-    - Subtask: Add tests for notification logic
+- **Story:** Integrate with Slack/Teams for notifications **[COMPLETE]**
+  - Task: Add notification config **[COMPLETE]**
+    - Subtask: Define notification settings in config **[COMPLETE]**
+    - Subtask: Add example for Slack/Teams **[COMPLETE]**
+  - Task: Implement notification sending on action execution/failure **[COMPLETE]**
+    - Subtask: Integrate with Slack/Teams API **[COMPLETE]**
+    - Subtask: Send notifications on success/failure **[COMPLETE]**
+    - Subtask: Add tests for notification logic **[COMPLETE]**
 
 ### **7.2 Approval & Dry-Run**
 - **Story:** Add approval and dry-run capabilities
-  - Task: Implement approval workflow (manual or chatops)
-    - Subtask: Define approval process and states
-    - Subtask: Integrate with chatops or web UI for approvals
-    - Subtask: Block execution until approved
-  - Task: Add dry-run mode for actions
-    - Subtask: Implement dry-run logic in executor
-    - Subtask: Allow dry-run via API or config
-    - Subtask: Return simulated results
+  - Task: Implement approval workflow (manual or chatops) **[COMPLETE]**
+    - Subtask: Define approval process and states **[COMPLETE]**
+    - Subtask: Integrate with chatops or web UI for approvals **[COMPLETE]**
+    - Subtask: Block execution until approved **[COMPLETE]**
+  - Task: Add dry-run mode for actions **[COMPLETE]**
+    - Subtask: Implement dry-run logic in executor **[COMPLETE]**
+    - Subtask: Allow dry-run via API or config **[COMPLETE]**
+    - Subtask: Return simulated results **[COMPLETE]**
 
 ---
 
@@ -233,33 +233,35 @@
 
 ### **8.1 Testing**
 - **Story:** Ensure code quality and reliability
-  - Task: Write unit and integration tests
-    - Subtask: Write unit tests for all modules
-    - Subtask: Write integration tests for API endpoints
-    - Subtask: Add tests for error and edge cases
-  - Task: Add test cases for all endpoints and scenarios
-    - Subtask: Define test scenarios for each endpoint
-    - Subtask: Automate test execution in CI
+  - Task: Write unit and integration tests **[COMPLETE]**
+    - Subtask: Write unit tests for all modules **[COMPLETE]**
+    - Subtask: Write integration tests for API endpoints **[COMPLETE]**
+    - Subtask: Add tests for error and edge cases **[COMPLETE]**
+    - Subtask: Add integration and unit tests for approval workflow **[COMPLETE]**
+    - Subtask: Add integration tests for dry-run mode **[COMPLETE]**
+  - Task: Add test cases for all endpoints and scenarios **[COMPLETE]**
+    - Subtask: Define test scenarios for each endpoint **[COMPLETE]**
+    - Subtask: Automate test execution in CI **[COMPLETE]**
 
 ### **8.2 CI/CD Integration**
-- **Story:** Automate build, test, and deployment
-  - Task: Set up CI/CD pipeline
-    - Subtask: Choose CI/CD tool (GitHub Actions, GitLab CI, etc.)
-    - Subtask: Configure build, test, and deploy stages
-    - Subtask: Add status badges to README
-  - Task: Automate onboarding of new actions via PRs
-    - Subtask: Add CI checks for new playbooks/scripts
-    - Subtask: Validate config and action files in PRs
+- **Story:** Automate build, test, and deployment **[COMPLETE]**
+  - Task: Set up CI/CD pipeline **[COMPLETE]**
+    - Subtask: Choose CI/CD tool (GitHub Actions, GitLab CI, etc.) **[COMPLETE]**
+    - Subtask: Configure build, test, and deploy stages **[COMPLETE]**
+    - Subtask: Add status badges to README **[COMPLETE]**
+  - Task: Automate onboarding of new actions via PRs **[COMPLETE]**
+    - Subtask: Add CI checks for new playbooks/scripts **[COMPLETE]**
+    - Subtask: Validate config and action files in PRs **[COMPLETE]**
 
 ### **8.3 Documentation**
-- **Story:** Comprehensive user and developer docs
-  - Task: Document API endpoints, config, and onboarding
-    - Subtask: Write API reference docs
-    - Subtask: Document config file formats and examples
-    - Subtask: Add onboarding guide for new users
-  - Task: Provide usage examples and troubleshooting guide
-    - Subtask: Add example webhook payloads
-    - Subtask: Document common issues and solutions
+- **Story:** Comprehensive user and developer docs **[COMPLETE]**
+  - Task: Document API endpoints, config, and onboarding **[COMPLETE]**
+    - Subtask: Write API reference docs **[COMPLETE]**
+    - Subtask: Document config file formats and examples **[COMPLETE]**
+    - Subtask: Add onboarding guide for new users **[COMPLETE]**
+  - Task: Provide usage examples and troubleshooting guide **[COMPLETE]**
+    - Subtask: Add example webhook payloads **[COMPLETE]**
+    - Subtask: Document common issues and solutions **[COMPLETE]**
 
 ---
 

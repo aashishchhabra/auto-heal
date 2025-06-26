@@ -88,3 +88,29 @@ def test_run_script_exception():
         result = executor.run_script("scripts/cleanup_disk.sh", ["--path", "/tmp"])
         assert result.success is False
         assert result.error == "crash"
+
+
+def test_run_playbook_dry_run():
+    executor = ActionExecutor()
+    result = executor.run_playbook(
+        "playbooks/restart_service.yml", {"service_name": "nginx"}, dry_run=True
+    )
+    assert result.success is True
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert result.error is None
+    assert "[DRY-RUN]" in result.stdout
+    assert "playbooks/restart_service.yml" in result.stdout
+
+
+def test_run_script_dry_run():
+    executor = ActionExecutor()
+    result = executor.run_script(
+        "scripts/cleanup_disk.sh", ["--path", "/tmp"], dry_run=True
+    )
+    assert result.success is True
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert result.error is None
+    assert "[DRY-RUN]" in result.stdout
+    assert "scripts/cleanup_disk.sh" in result.stdout

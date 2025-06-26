@@ -4,7 +4,5 @@ flake8
 black
 pre-commit
 pydantic
-<<<<<<< HEAD
-=======
 pyyaml
->>>>>>> 67b7805 (Fix: remove unused import to pass flake8 linting (Phase 5))
+pytest-cov

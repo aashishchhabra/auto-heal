@@ -53,4 +53,9 @@ All endpoints (except `/health`) require an API key for access. The API key must
 - Add new playbooks/scripts in their respective directories and update config.
 - Use pre-commit hooks for linting and formatting.
 
+## Approval, Dry-run, and CI/CD Features
+- Approval workflow and dry-run support are implemented and documented.
+- CI/CD pipeline includes lint, format, test, coverage, security, badge automation, onboarding, and README link validation.
+- See README.md for API usage and badge automation details.
+
 ---
