@@ -49,6 +49,54 @@ All endpoints (except `/health`) require an API key for access. The API key must
 ### Rotating API Keys
 - Update the `API_KEY` environment variable and restart the server.
 
+## Remote Action Execution: Controller and VM Access
+
+- The Auto-Healer API server connects to an Ansible controller node using connection details defined in `config/actions.yaml` or `config/controllers.yaml`.
+- The Ansible controller is responsible for connecting to the remote VM, using SSH user/key and other details from its own inventory or playbook variables.
+- This separation allows secure, flexible, and environment-specific execution.
+
+**Example controller config:**
+```yaml
+controllers:
+  dc1-ansible:
+    host: ansible-controller.example.com
+    ssh_user: ansible
+    ssh_key: /path/to/key
+```
+**Example Ansible inventory:**
+```
+[webservers]
+vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pem
+```
+
+**Key Points:**
+- Auto-Healer only needs to know how to reach the controller.
+- The controller manages all details for connecting to remote VMs.
+
+## Specifying Actions, Target Nodes, and Controllers
+
+- Users call the API with the action name, parameters (such as `target_node`), and optionally the controller.
+- If the controller is not specified, the default for the action is used.
+- The controller receives the parameters and uses its own inventory to connect to the correct VM.
+
+**Example API Payload:**
+```json
+{
+  "action": "restart_service",
+  "parameters": {
+    "service_name": "nginx",
+    "target_node": "vm1.example.com"
+  },
+  "controller": "dc1-ansible"
+}
+```
+
+| What User Provides | Where It Goes         | Who Uses It                |
+|--------------------|----------------------|----------------------------|
+| action             | API payload          | Auto-Healer                |
+| parameters         | API payload          | Passed to controller/playbook |
+| controller         | API payload (optional) | Auto-Healer (for routing)  |
+
 ## Contributing
 - Add new playbooks/scripts in their respective directories and update config.
 - Use pre-commit hooks for linting and formatting.

@@ -112,4 +112,50 @@ If your script/playbook outputs JSON or custom text, document the expected outpu
 
 ---
 
+## Controller and Remote VM Access
+
+- When onboarding a new action, specify the controller node in the action config (e.g., `config/actions.yaml`).
+- The controller node's connection details (host, user, key) are managed in the controller config.
+- The SSH user/key for the remote VM should be managed in the Ansible inventory or playbook variables on the controller node, not in Auto-Healer.
+
+**Example:**
+```yaml
+controllers:
+  dc1-ansible:
+    host: ansible-controller.example.com
+    ssh_user: ansible
+    ssh_key: /path/to/key
+actions:
+  restart_service:
+    controller: dc1-ansible
+    ...
+```
+And in your Ansible inventory:
+```
+[webservers]
+vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pem
+```
+
+This ensures a clear separation of responsibilities and secure credential management.
+
+---
+
+## Specifying Action, Target Node, and Controller
+
+- When triggering an action, users provide the action name, parameters (such as `target_node`), and optionally the controller in the API payload.
+- If the controller is omitted, the default for the action is used.
+- The controller uses the parameters and its inventory to connect to the correct VM.
+
+**Example API Payload:**
+```json
+{
+  "action": "restart_service",
+  "parameters": {
+    "service_name": "nginx",
+    "target_node": "vm1.example.com"
+  },
+  "controller": "dc1-ansible"
+}
+```
+
 For more details, see `docs/PROJECT_OVERVIEW.md`.

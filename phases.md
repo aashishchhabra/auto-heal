@@ -281,3 +281,5 @@
 ---
 
 This phased plan ensures a modular, secure, and extensible implementation.
+
+- Note: Controller connection details are managed in Auto-Healer config; remote VM SSH details are managed in the Ansible controller's inventory. This ensures separation of concerns and secure credential handling.
