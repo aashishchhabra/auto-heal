@@ -164,11 +164,20 @@ vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pe
 
 ## Project Metadata
 - **License:** MIT
-- **Maintainers:** [Your Team/Org]
+- **Maintainers:** Aashish Chhabra
 - **Status:** Production-ready
 - **CI/CD:** GitHub Actions (see `.github/workflows/`)
 - **Coverage:** 100% (see badge above)
 - **Security Scan:** Bandit (No issues identified., last scan: 2025-06-26)
+
+## Contributors
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START -->
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://allcontributors.org) specification. Contributions of any kind welcome!
 
 ## License
 MIT

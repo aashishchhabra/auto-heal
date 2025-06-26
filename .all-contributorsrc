@@ -1,0 +1,13 @@
+{
+  "contributors": [],
+  "projectName": "auto-heal",
+  "projectOwner": "aashishchhabra",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": ["README.md"],
+  "imageSize": 100,
+  "commit": true,
+  "contributorsPerLine": 7,
+  "badgeTemplate": "",
+  "skipCi": true
+}
