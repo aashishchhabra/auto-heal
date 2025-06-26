@@ -1,8 +1,11 @@
 fastapi
-uvicorn[standard]
+pydantic
+starlette
+requests
+pyyaml
+pytest
 flake8
 black
-pre-commit
-pydantic
-pyyaml
-pytest-cov
+pip-tools
+bandit
+uvicorn
