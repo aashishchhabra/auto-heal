@@ -4,6 +4,7 @@ starlette
 requests
 pyyaml
 pytest
+pytest-pythonpath
 flake8
 black
 pip-tools
