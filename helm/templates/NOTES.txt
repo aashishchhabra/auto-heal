@@ -1,0 +1,28 @@
+Auto-Healer Helm Chart
+=====================
+
+1. **Install the chart:**
+   helm install auto-healer ./helm
+
+2. **Set API key and config:**
+   helm upgrade auto-healer ./helm \
+     --set env.API_KEY=<your-api-key> \
+     --set-file config.actions=./config/actions.yaml \
+     --set-file config.controllers=./config/controllers.yaml \
+     --set-file config.notifications=./config/notifications.yaml
+
+3. **Endpoints:**
+   - Liveness:    /live
+   - Readiness:   /ready
+   - Health:      /health
+
+4. **Upgrade:**
+   helm upgrade auto-healer ./helm
+
+5. **Rollback:**
+   helm rollback auto-healer <REVISION>
+
+6. **Uninstall:**
+   helm uninstall auto-healer
+
+See README and docs/CONTAINERIZATION.md for more.

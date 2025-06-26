@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  auto-heal:
+    build: .
+    container_name: auto-heal
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Add your environment variables here
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - ./playbooks:/app/playbooks:ro
+      - ./scripts:/app/scripts:ro
+    restart: unless-stopped

@@ -118,6 +118,19 @@ async def health(request: Request):
     return {"status": "ok", "version": os.getenv("API_VERSION", "0.1.0")}
 
 
+@app.get("/live")
+async def liveness_probe():
+    """Kubernetes/Swarm liveness probe endpoint (no auth)."""
+    return {"status": "live", "version": os.getenv("API_VERSION", "0.1.0")}
+
+
+@app.get("/ready")
+async def readiness_probe():
+    """Kubernetes/Swarm readiness probe endpoint (no auth)."""
+    # Optionally, add checks for DB, config, etc. For now, always ready.
+    return {"status": "ready", "version": os.getenv("API_VERSION", "0.1.0")}
+
+
 @app.get("/protected")
 async def protected():
     return {"message": "You have accessed a protected endpoint!"}

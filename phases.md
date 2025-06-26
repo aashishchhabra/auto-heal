@@ -265,21 +265,141 @@
 
 ---
 
-# **Summary Table**
+# **Future Phases & Roadmap**
 
-| Phase | Sub-Phase | Story | Tasks |
-|-------|-----------|-------|-------|
-| 1     | 1.1, 1.2  | Project setup, Core API | Repo, structure, health endpoint, logging |
-| 2     | 2.1, 2.2  | AuthN/AuthZ | API key, permissions, docs |
-| 3     | 3.1-3.3   | Action mapping, Controller inventory, Executor | Configs, loader, SSH/API exec |
-| 4     | 4.1, 4.2  | Webhook, Dynamic routing | Endpoint, override logic |
-| 5     | 5.1-5.3   | Logging, Audit, Error handling | Structured logs, audit, error responses |
-| 6     | 6.1, 6.2  | Sample actions, Onboarding | Playbooks/scripts, docs, auto-discovery |
-| 7     | 7.1, 7.2  | Notifications, Approval, Dry-run | Slack, approval, dry-run |
-| 8     | 8.1-8.3   | Testing, CI/CD, Docs | Tests, pipeline, documentation |
+## Phase 9: Containerization & Orchestration
+**Goal:** Run Auto-Healer as a single Docker container, Docker Swarm service, or Kubernetes deployment (Helm-ready).
+
+### Stories & Tasks
+- **Story 1: Dockerize Auto-Healer**
+  - Task: Write a production-ready Dockerfile (multi-stage, minimal image) **[COMPLETE]**
+  - Task: Add docker-compose.yml for local dev/test **[COMPLETE]**
+  - Task: Document environment variables, secrets, and config mounting **[COMPLETE]**
+    - Subtask: Add troubleshooting section for container issues **[COMPLETE]**
+- **Story 2: Swarm/HA Support**
+  - Task: Add health/liveness/readiness endpoints **[COMPLETE]**
+  - Task: Document scaling, rolling updates, and service discovery **[COMPLETE]**
+- **Story 3: Kubernetes/Helm**
+  - Task: Write Kubernetes manifests (Deployment, Service, ConfigMap, Secret) **[COMPLETE]**
+  - Task: Create a Helm chart with values.yaml **[COMPLETE]**
+  - Task: Document deployment, upgrades, and rollback **[COMPLETE]**
+
+**Phase 9 Estimate:** 10d
 
 ---
 
-This phased plan ensures a modular, secure, and extensible implementation.
+## Phase 10: Web Dashboard & Self-Service
+**Goal:** Provide a UI for action history, approvals, manual triggers, and real-time status.
 
-- Note: Controller connection details are managed in Auto-Healer config; remote VM SSH details are managed in the Ansible controller's inventory. This ensures separation of concerns and secure credential handling.
+### Stories & Tasks
+- **Story 1: Dashboard MVP**
+  - Task: Design UI/UX wireframes _(1d)_
+  - Task: Implement dashboard (React/Vue/Svelte) _(5d)_
+  - Task: Integrate with API for action listing, approval, and dry-run _(2d)_
+- **Story 2: Real-Time Status & Metrics**
+  - Task: Add WebSocket or polling for live updates _(2d)_
+  - Task: Show action queue, audit log, and notifications _(2d)_
+- **Story 3: Self-Service Onboarding**
+  - Task: UI for onboarding new actions/scripts _(2d)_
+  - Task: Docs and walkthrough _(1d)_
+
+**Phase 10 Estimate:** 15d
+
+---
+
+## Phase 11: Audit, Compliance & Analytics
+**Goal:** Provide immutable audit logs, export, and analytics for compliance.
+
+### Stories & Tasks
+- **Story 1: Immutable Audit Log Storage**
+  - Task: Integrate with S3 or external SIEM _(2d)_
+  - Task: Add log rotation and retention policies _(1d)_
+- **Story 2: Export & Compliance**
+  - Task: Export logs in CSV/JSON formats _(1d)_
+  - Task: Add compliance metadata (user, timestamp, action) _(1d)_
+- **Story 3: Analytics**
+  - Task: Action success/failure rates, trends _(2d)_
+  - Task: Dashboard widgets for analytics _(2d)_
+
+**Phase 11 Estimate:** 9d
+
+---
+
+## Phase 12: Security Guardrails
+**Goal:** Enforce security best practices, secrets management, and RBAC.
+
+### Stories & Tasks
+- **Story 1: Secret Management Integration**
+  - Task: Integrate with Vault/AWS Secrets Manager _(2d)_
+  - Task: Refactor config to use secrets _(1d)_
+- **Story 2: RBAC & API Keys**
+  - Task: Per-action/controller API keys _(2d)_
+  - Task: Role-based access control for endpoints _(2d)_
+- **Story 3: Rate Limiting & Cooldowns**
+  - Task: Implement per-action rate limits _(1d)_
+  - Task: Add cooldowns and impact simulation _(1d)_
+
+**Phase 12 Estimate:** 9d
+
+---
+
+## Phase 13: Enhanced Notification Integration
+**Goal:** Support more platforms, custom templates, and notification routing.
+
+### Stories & Tasks
+- **Story 1: Multi-Platform Support**
+  - Task: Integrate email, PagerDuty, Opsgenie, SMS _(3d)_
+- **Story 2: Custom Templates & Routing**
+  - Task: Add notification templates per action/severity _(2d)_
+  - Task: Severity-based routing and throttling _(2d)_
+- **Story 3: Notification Deduplication**
+  - Task: Implement deduplication logic _(1d)_
+
+**Phase 13 Estimate:** 8d
+
+---
+
+## Phase 14: Developer Experience
+**Goal:** Improve onboarding, local dev, and action scaffolding.
+
+### Stories & Tasks
+- **Story 1: CLI Tool**
+  - Task: Build CLI for local testing, dry-run, and action management _(3d)_
+- **Story 2: Action Scaffolding**
+  - Task: Generator for new actions/scripts _(2d)_
+- **Story 3: Docs & Samples**
+  - Task: Add code samples and onboarding docs _(1d)_
+
+**Phase 14 Estimate:** 6d
+
+---
+
+## Phase 15: Cloud Provider Integrations
+**Goal:** Native support for AWS, Azure, GCP for cloud-native healing.
+
+### Stories & Tasks
+- **Story 1: AWS Integration**
+  - Task: Trigger Lambda, SSM, EC2 actions _(2d)_
+  - Task: CloudWatch event integration _(1d)_
+- **Story 2: Azure & GCP**
+  - Task: Azure Functions, VM, and alert integration _(2d)_
+  - Task: GCP Cloud Functions, Compute Engine _(2d)_
+- **Story 3: Cloud Auth & Config**
+  - Task: Secure credential/config management _(1d)_
+
+**Phase 15 Estimate:** 9d
+
+---
+
+## Phase 16: Extensibility & Plugins
+**Goal:** Allow plugins for custom actions, notifications, and health checks.
+
+### Stories & Tasks
+- **Story 1: Plugin System**
+  - Task: Design plugin API and loader _(2d)_
+  - Task: Implement plugin discovery and sandboxing _(2d)_
+- **Story 2: Plugin Marketplace**
+  - Task: Registry for community plugins _(2d)_
+  - Task: Docs and publishing guide _(1d)_
+
+**Phase 16 Estimate:** 7d

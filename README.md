@@ -145,6 +145,40 @@ vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pe
 - The controller node connects to the remote VM using details in its own inventory.
 - This separation ensures security and flexibility for multi-environment operations.
 
+## Kubernetes & Helm Deployment
+
+Auto-Healer can be deployed to Kubernetes or OpenShift using the provided manifests or Helm chart.
+
+### Kubernetes Manifests
+- See `k8s/` directory for:
+  - `deployment.yaml`: Main Deployment
+  - `service.yaml`: ClusterIP Service
+  - `configmap.yaml`: Mounts config files
+  - `secret.yaml`: Stores API key (base64-encoded)
+- Apply all at once:
+  ```sh
+  kubectl apply -f k8s/
+  ```
+- Health, liveness, and readiness endpoints:
+  - `/health` — General health check
+  - `/live` — Liveness probe
+  - `/ready` — Readiness probe
+
+### Helm Chart
+- See `helm/` directory for a production-ready Helm chart.
+- Install with:
+  ```sh
+  helm install auto-healer ./helm --set env.API_KEY=<your-api-key>
+  ```
+- Upgrade, rollback, and config instructions in `helm/templates/NOTES.txt`.
+
+### Scaling & Rolling Updates
+- Scale with `kubectl scale deployment/auto-healer --replicas=3` or edit `replicaCount` in Helm `values.yaml`.
+- Rolling updates are supported by default. Update image/tag and re-apply.
+
+### Service Discovery
+- Access via `auto-healer` service in-cluster, or expose via Ingress/LoadBalancer as needed.
+
 ## Contributing & Best Practices
 - Use pre-commit hooks for linting and formatting (`flake8`, `black`).
 - Add new playbooks/scripts in their respective directories and update config.

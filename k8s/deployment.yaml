@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auto-healer
+  labels:
+    app: auto-healer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auto-healer
+  template:
+    metadata:
+      labels:
+        app: auto-healer
+    spec:
+      containers:
+        - name: auto-healer
+          image: aashishchhabra/auto-healer:latest # Update as needed
+          ports:
+            - containerPort: 8000
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auto-healer-secret
+                  key: api-key
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: config
+          configMap:
+            name: auto-healer-config
+        - name: logs
+          emptyDir: {}

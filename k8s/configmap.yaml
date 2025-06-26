@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auto-healer-config
+data:
+  # Example config files (mount as needed)
+  actions.yaml: |
+    # Paste your actions.yaml content here
+  controllers.yaml: |
+    # Paste your controllers.yaml content here
+  notifications.yaml: |
+    # Paste your notifications.yaml content here

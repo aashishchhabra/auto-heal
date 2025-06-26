@@ -97,6 +97,14 @@ vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pe
 | parameters         | API payload          | Passed to controller/playbook |
 | controller         | API payload (optional) | Auto-Healer (for routing)  |
 
+## Containerization, Kubernetes & Helm
+
+- Production-ready Dockerfile and docker-compose for local/dev/test.
+- Kubernetes manifests in `k8s/` for Deployment, Service, ConfigMap, and Secret.
+- Helm chart in `helm/` for easy upgrades, rollback, and config management.
+- Health, liveness, and readiness endpoints: `/health`, `/live`, `/ready` (all public, for orchestration probes).
+- See `docs/CONTAINERIZATION.md` for full usage and orchestration details.
+
 ## Contributing
 - Add new playbooks/scripts in their respective directories and update config.
 - Use pre-commit hooks for linting and formatting.

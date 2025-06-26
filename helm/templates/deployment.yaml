@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "auto-healer.fullname" . }}
+  labels:
+    app: {{ include "auto-healer.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "auto-healer.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "auto-healer.name" . }}
+    spec:
+      containers:
+        - name: auto-healer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: API_KEY
+              value: {{ .Values.env.API_KEY | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "auto-healer.fullname" . }}-config
+        - name: logs
+          emptyDir: {}
