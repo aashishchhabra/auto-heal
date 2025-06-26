@@ -95,5 +95,4 @@ jobs:
 
       - name: Validate README.md links
         run: |
-          pip install markdown-link-check
           npx markdown-link-check README.md
