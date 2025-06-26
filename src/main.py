@@ -10,11 +10,10 @@ import sys
 import json
 import datetime
 from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
-<<<<<<< HEAD
-from src.actions import get_action_config, get_controller_config
-=======
+
+
 from src.actions import get_action_config, get_controller_config, discover_actions
->>>>>>> 67b7805 (Fix: remove unused import to pass flake8 linting (Phase 5))
+
 from src.executor import ActionExecutor
 import logging.handlers
 
