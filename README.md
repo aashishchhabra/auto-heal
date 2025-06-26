@@ -1,7 +1,7 @@
 # Auto-Healer API Server
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-org/auto-heal/actions)
-[![Coverage Status](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/your-org/auto-heal/actions)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/aashishchhabra/auto-heal/actions)
+[![Coverage Status](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/aashishchhabra/auto-heal/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Overview
