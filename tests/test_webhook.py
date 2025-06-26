@@ -194,7 +194,7 @@ def test_webhook_playbook_dry_run(monkeypatch):
     assert data["dry_run"] is True
     assert data["execution"]["success"] is True
     assert "[DRY-RUN]" in data["execution"]["stdout"]
-    assert data["stdout"] == (
+    assert data["execution"]["stdout"] == (
         "[DRY-RUN] Would execute playbook: "
         "playbooks/restart_service.yml with vars: {'service_name': 'nginx'}"
     )
@@ -226,7 +226,7 @@ def test_webhook_script_dry_run(monkeypatch):
     assert data["dry_run"] is True
     assert data["execution"]["success"] is True
     assert "[DRY-RUN]" in data["execution"]["stdout"]
-    assert data["stdout"] == (
+    assert data["execution"]["stdout"] == (
         "[DRY-RUN] Would execute script: "
         "scripts/cleanup_disk.sh with args: ['--path', '/tmp']"
     )

@@ -80,7 +80,7 @@ class NotificationSender:
         payload = {
             "@type": "MessageCard",
             "themeColor": color,
-            "text": text,
+            "sections": [{"text": text}],
         }
         try:
             resp = requests.post(self.teams_url, json=payload, timeout=5)
