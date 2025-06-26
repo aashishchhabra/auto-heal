@@ -168,6 +168,7 @@ vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pe
 - **Status:** Production-ready
 - **CI/CD:** GitHub Actions (see `.github/workflows/`)
 - **Coverage:** 100% (see badge above)
+- **Security Scan:** Bandit (No issues identified., last scan: 2025-06-26)
 
 ## License
 MIT

@@ -8,3 +8,11 @@ repos:
     rev: 7.3.0
     hooks:
       - id: flake8
+  - repo: local
+    hooks:
+      - id: update-bandit-in-readme
+        name: Update Bandit security scan result in README.md
+        entry: ./scripts/update_bandit_in_readme.sh
+        language: script
+        pass_filenames: false
+        always_run: true
