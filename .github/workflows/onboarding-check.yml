@@ -29,24 +29,27 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt pytest-cov
       - name: Lint with flake8
         run: |
-          . venv/bin/activate || python -m venv venv
-          . venv/bin/activate && pip install flake8 black
-          . venv/bin/activate && flake8 src/ tests/
+          . venv/bin/activate
+          flake8 src/ tests/
       - name: Check formatting with black
         run: |
-          . venv/bin/activate && black --check src/ tests/
+          . venv/bin/activate
+          black --check src/ tests/
       - name: Run onboarding/auto-discovery check
         run: |
           chmod +x scripts/check_action_onboarding.py
-          . venv/bin/activate && scripts/check_action_onboarding.py
+          . venv/bin/activate
+          scripts/check_action_onboarding.py
       - name: Run tests with coverage
         run: |
-          . venv/bin/activate && pip install pytest pytest-cov
-          . venv/bin/activate && pytest --cov=src --cov-report=xml --cov-report=term --maxfail=1 --disable-warnings -v
+          . venv/bin/activate
+          pytest --cov=src --cov-report=xml --cov-report=term --maxfail=1 --disable-warnings -v
       - name: Upload coverage to GitHub (optional)
         uses: actions/upload-artifact@v4
         with:
