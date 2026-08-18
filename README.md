@@ -7,6 +7,55 @@
 ## Overview
 Auto-Healer is a modular, production-ready API server for automated remediation and healing actions. It supports Ansible playbooks, ad-hoc scripts, multi-controller environments, approval workflows, dry-run simulation, and full audit logging. Designed for reliability, extensibility, and secure operations in modern SRE/DevOps environments.
 
+## Why Auto-Healer?
+
+Most teams end up in one of two places: an on-call rotation that hand-runs
+the same handful of playbooks at 3am, or a heavyweight commercial AIOps
+platform that remediates things you can't fully see or audit. Auto-Healer is
+the middle path - a small, self-hosted service that turns an alert your team
+already trusts (Grafana, Prometheus Alertmanager, or anything else that can
+fire a webhook) into a controlled, logged action, without asking you to hand
+your infrastructure credentials to a SaaS vendor.
+
+What that means concretely:
+
+- **It talks to what you actually run.** Bare-metal servers and VMs over SSH
+  via Ansible, OpenShift/Kubernetes via `oc`/`kubectl` over SSH, or - with no
+  bastion host and no SSH at all - directly against the Kubernetes API using
+  a scoped, in-cluster ServiceAccount. Mix all three in the same deployment;
+  most real infrastructure isn't one substrate.
+- **Nothing runs unattended by default.** Every action supports `dry_run`
+  before it's ever allowed to touch anything live. Cooldowns stop a real bug
+  from becoming a restart loop. Rate limits absorb an alert storm instead of
+  hammering the fleet. The riskiest actions - draining a node, scaling a
+  production Deployment - can require a second, different person's approval,
+  and a requester can never approve their own request.
+- **Every action is provably accounted for.** The audit trail is hash-chained
+  (tamper-EVIDENT: edit or delete a past entry and a verify check catches it)
+  and can mirror, best-effort, to your existing SIEM - syslog or a plain
+  HTTP/Elasticsearch sink, mapped to Elastic Common Schema so it's useful
+  there without a bespoke index mapping. When someone asks "what ran against
+  prod last night and who approved it," the answer isn't a Slack scrollback.
+- **Access is scoped, not all-or-nothing.** Role-based permissions plus
+  per-API-key restriction to a specific set of actions and controllers mean
+  the credential your alerting system uses can be limited to exactly the
+  handful of low-risk remediations it should ever trigger - nothing more.
+- **Secrets stay out of plaintext config.** SSH keys, kubeconfigs, API
+  tokens, and Vault's own credential can all be resolved from HashiCorp
+  Vault at request time and, for anything written to disk, materialized to
+  a private tempfile for the duration of one call and then deleted.
+- **It's a config change, not a deployment.** Onboarding a new remediation
+  means adding a playbook/script and a few lines of YAML - no redeploying
+  the service, no vendor ticket. See `docs/on-call-case-study.html` for what
+  that looks like end to end, from a Grafana alert to a resolved incident.
+- **You can read every line of it.** No black-box remediation logic, no
+  data leaving your network unless you configure shipping to say so. It's
+  a FastAPI service you can run in a container, a pod, or a plain Python
+  virtualenv, and audit yourself.
+
+If your team already has an alerting pipeline and a growing pile of
+"the same three fixes, every week" - this is built to sit exactly there.
+
 ## Features
 
 - Approval workflow for sensitive actions (queue, approve, reject, list)
