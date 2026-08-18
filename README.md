@@ -10,6 +10,7 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 ## Features
 
 - Approval workflow for sensitive actions (queue, approve, reject, list)
+- Per-action cooldowns and per-caller/per-action rate limiting on `/webhook`
 - Dry-run support for all actions
 - Automated CI/CD with badge automation and onboarding validation
 - Webhook API for triggering healing actions

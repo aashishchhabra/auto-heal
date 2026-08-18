@@ -1,0 +1,25 @@
+# Rate limits for /webhook. Not applied to read-only endpoints (/audit,
+# /approvals, /health) or to approving/rejecting a queued action - those
+# are already gated by RBAC and, for approvals, by cooldowns.
+#
+# Two independent limits are enforced per request, whichever is stricter:
+#   - "caller" limit: how many /webhook calls a single API key can make
+#     per minute (per_role overrides default; unlisted roles use default).
+#   - "action" limit (optional, per_action): how many /webhook calls for
+#     one specific action can happen per minute, across ALL callers -
+#     protects a sensitive action even if multiple different API keys are
+#     the ones triggering it.
+default:
+  requests_per_minute: 60
+
+per_role:
+  readonly:
+    requests_per_minute: 20
+  operator:
+    requests_per_minute: 60
+  admin:
+    requests_per_minute: 120
+
+per_action:
+  restart_deployment:
+    requests_per_minute: 10
