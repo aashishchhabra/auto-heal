@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
     import src.actions
 
     src.actions.set_merged_actions(merged)
+    _load_approval_queue()
     yield
     # Place any shutdown logic here
 
@@ -159,26 +160,92 @@ class WebhookPayload(BaseModel):
     )
 
 
-# In-memory approval queue (thread-safe)
+# Approval queue. Kept in memory for fast reads, but persisted to disk on
+# every mutation so pending (and recent) approvals survive a process
+# restart or pod reschedule instead of silently vanishing.
 approval_queue = []
 approval_lock = Lock()
+
+APPROVALS_STATE_PATH = os.path.join(os.path.dirname(__file__), "../logs/approvals.json")
+# Approved/rejected entries beyond this count are dropped on save - their
+# permanent record already lives in the audit log, so the queue only needs
+# to keep recent history bounded rather than growing forever. Pending
+# entries are never dropped.
+MAX_PROCESSED_APPROVALS = 500
 
 # Approval entry structure:
 # {
 #   "id": <unique>,
 #   "payload": <WebhookPayload dict>,
 #   "status": "pending"|"approved"|"rejected",
-#   "result": None|dict
+#   "result": None|dict,
+#   "requested_by": <api key>,
+#   "role": <requester role>,
+#   "controller": <controller name>,
+#   "approved_by": <api key>,      # set once processed
+#   "approver_role": <role>,       # set once processed
 # }
 import uuid
 
 
+def _load_approval_queue():
+    """Populate approval_queue from disk at startup, if a prior run left one."""
+    if not os.path.exists(APPROVALS_STATE_PATH):
+        return
+    try:
+        with open(APPROVALS_STATE_PATH) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.error(f"Failed to load persisted approval queue, starting empty: {e}")
+        return
+    if isinstance(data, list):
+        with approval_lock:
+            approval_queue.extend(data)
+        logger.info(f"Loaded {len(data)} persisted approval(s) from disk")
+
+
+def _prune_approval_queue_locked():
+    """
+    Caller must hold approval_lock. Drops the oldest processed entries
+    beyond MAX_PROCESSED_APPROVALS, keeping every pending entry regardless
+    of count - it's still actionable work, not history.
+    """
+    processed_positions = [
+        i for i, e in enumerate(approval_queue) if e["status"] != "pending"
+    ]
+    excess = len(processed_positions) - MAX_PROCESSED_APPROVALS
+    if excess > 0:
+        drop = set(processed_positions[:excess])
+        approval_queue[:] = [e for i, e in enumerate(approval_queue) if i not in drop]
+
+
+def _save_approval_queue_locked():
+    """
+    Caller must hold approval_lock. Writes to a temp file and renames it
+    into place so a crash mid-write can't leave a truncated/corrupt state
+    file behind.
+    """
+    _prune_approval_queue_locked()
+    tmp_path = f"{APPROVALS_STATE_PATH}.tmp"
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(approval_queue, f)
+        os.replace(tmp_path, APPROVALS_STATE_PATH)
+    except OSError as e:
+        logger.error(f"Failed to persist approval queue: {e}")
+
+
+def _find_approval_entry_locked(entry_id):
+    """Caller must hold approval_lock."""
+    for entry in approval_queue:
+        if entry["id"] == entry_id:
+            return entry
+    return None
+
+
 def get_approval_entry(entry_id):
     with approval_lock:
-        for entry in approval_queue:
-            if entry["id"] == entry_id:
-                return entry
-    return None
+        return _find_approval_entry_locked(entry_id)
 
 
 def is_local_controller(controller_config: dict) -> bool:
@@ -285,6 +352,7 @@ async def webhook(request: Request):
         }
         with approval_lock:
             approval_queue.append(approval_entry)
+            _save_approval_queue_locked()
         logger.info(f"Action '{event_type}' queued for approval (id={entry_id})")
         return {
             "approval_id": entry_id,
@@ -492,19 +560,31 @@ def approve_approval(approval_id: str, request: Request):
             status_code=403,
             content={"detail": "Approving actions is not permitted for your role"},
         )
-    entry = get_approval_entry(approval_id)
-    if not entry:
-        return JSONResponse(status_code=404, content={"detail": "Approval not found"})
-    if entry["status"] != "pending":
-        return JSONResponse(
-            status_code=400, content={"detail": f"Already {entry['status']}"}
-        )
-    if entry["requested_by"] == api_key:
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "You cannot approve your own request"},
-        )
-    # Execute the action now
+    with approval_lock:
+        entry = _find_approval_entry_locked(approval_id)
+        if not entry:
+            return JSONResponse(
+                status_code=404, content={"detail": "Approval not found"}
+            )
+        if entry["status"] != "pending":
+            return JSONResponse(
+                status_code=400, content={"detail": f"Already {entry['status']}"}
+            )
+        if entry["requested_by"] == api_key:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "You cannot approve your own request"},
+            )
+        # Claim it immediately, while still holding the lock, so a
+        # concurrent approve/reject on the same entry can't also pass the
+        # pending check and double-execute it.
+        entry["status"] = "approved"
+        entry["approved_by"] = api_key
+        entry["approver_role"] = approver_role
+        _save_approval_queue_locked()
+
+    # Execute outside the lock - this can take a while (SSH, ansible-playbook)
+    # and shouldn't block /approvals reads or other approve/reject calls.
     payload = WebhookPayload(**entry["payload"])
     event_type = payload.event_type
     action_config = get_action_config(event_type)
@@ -517,18 +597,19 @@ def approve_approval(approval_id: str, request: Request):
     dry_run = getattr(payload, "dry_run", False)
     exec_result = execute_action(action_config, controller_config, params, dry_run)
     if exec_result is None:
-        entry["status"] = "rejected"
-        entry["result"] = {
-            "error": "No playbook, script, or command defined for action"
-        }
+        with approval_lock:
+            entry["status"] = "rejected"
+            entry["result"] = {
+                "error": "No playbook, script, or command defined for action"
+            }
+            _save_approval_queue_locked()
         return JSONResponse(
             status_code=400,
             content={"detail": "No playbook, script, or command defined for action"},
         )
-    entry["status"] = "approved"
-    entry["result"] = exec_result.as_dict()
-    entry["approved_by"] = api_key
-    entry["approver_role"] = approver_role
+    with approval_lock:
+        entry["result"] = exec_result.as_dict()
+        _save_approval_queue_locked()
     # Write audit log
     audit_entry = {
         "user": entry["requested_by"],
@@ -558,22 +639,26 @@ def reject_approval(approval_id: str, request: Request):
             status_code=403,
             content={"detail": "Rejecting actions is not permitted for your role"},
         )
-    entry = get_approval_entry(approval_id)
-    if not entry:
-        return JSONResponse(status_code=404, content={"detail": "Approval not found"})
-    if entry["status"] != "pending":
-        return JSONResponse(
-            status_code=400, content={"detail": f"Already {entry['status']}"}
-        )
-    if entry["requested_by"] == api_key:
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "You cannot reject your own request"},
-        )
-    entry["status"] = "rejected"
-    entry["result"] = {"error": "Rejected by approver"}
-    entry["approved_by"] = api_key
-    entry["approver_role"] = approver_role
+    with approval_lock:
+        entry = _find_approval_entry_locked(approval_id)
+        if not entry:
+            return JSONResponse(
+                status_code=404, content={"detail": "Approval not found"}
+            )
+        if entry["status"] != "pending":
+            return JSONResponse(
+                status_code=400, content={"detail": f"Already {entry['status']}"}
+            )
+        if entry["requested_by"] == api_key:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "You cannot reject your own request"},
+            )
+        entry["status"] = "rejected"
+        entry["result"] = {"error": "Rejected by approver"}
+        entry["approved_by"] = api_key
+        entry["approver_role"] = approver_role
+        _save_approval_queue_locked()
     # Write audit log
     audit_entry = {
         "user": entry["requested_by"],

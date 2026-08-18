@@ -4,6 +4,27 @@ import os
 
 
 @pytest.fixture(autouse=True, scope="session")
+def clean_approvals_state_file():
+    """
+    Tests that don't override src.main.APPROVALS_STATE_PATH (most of them
+    hit the real app, so they persist to the real logs/approvals.json)
+    would otherwise leave that file behind after a test run. Wipe it
+    before and after the session so the suite doesn't pollute a real
+    developer's local state or leak entries between runs.
+    """
+    import src.main as main
+
+    def _remove():
+        for path in (main.APPROVALS_STATE_PATH, f"{main.APPROVALS_STATE_PATH}.tmp"):
+            if os.path.exists(path):
+                os.remove(path)
+
+    _remove()
+    yield
+    _remove()
+
+
+@pytest.fixture(autouse=True, scope="session")
 def patch_subprocess_default():
     """
     Session-wide safety net: nothing in the suite should shell out for real
