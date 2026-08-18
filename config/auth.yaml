@@ -22,3 +22,14 @@ api_keys:
   "admin-key": admin
   "operator-key": operator
   "readonly-key": readonly
+
+# Instead of the literal map above, api_keys can be resolved from a
+# HashiCorp Vault KV v2 secret at request time (requires VAULT_ADDR and
+# VAULT_TOKEN to be set in the environment). The secret at that path must
+# be shaped exactly like the literal map: {api_key: role}. If this is
+# configured and Vault becomes unreachable, ALL keys are rejected (fails
+# closed) rather than falling back to a stale or partial set - see
+# src/auth.py::_resolve_api_keys.
+#
+# api_keys:
+#   vault_path: "secret/data/auto-healer/api-keys"

@@ -210,6 +210,36 @@ vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pe
 
 This ensures a clear separation of responsibilities and secure credential management.
 
+### Secrets via Vault (Optional)
+Both API keys (`config/auth.yaml`) and controller SSH private keys
+(`config/controllers.yaml`) can be resolved from HashiCorp Vault instead
+of living in plaintext config, if `VAULT_ADDR` and `VAULT_TOKEN` are set
+in the environment:
+```yaml
+# config/auth.yaml
+api_keys:
+  vault_path: "secret/data/auto-healer/api-keys"   # {api_key: role} at this path
+
+# config/controllers.yaml
+controllers:
+  dc2-oc:
+    ssh_key: "vault:secret/data/auto-healer/controllers/dc2-oc"
+    # or, for a non-default field name:
+    # ssh_key: "vault:secret/data/auto-healer/controllers/dc2-oc#ssh_private_key"
+```
+Both are opt-in and read-only (KV v2, static token auth) - a deployment
+that doesn't set `VAULT_ADDR`/`VAULT_TOKEN` behaves exactly as if Vault
+support didn't exist. If `vault_path` **is** configured for API keys and
+Vault becomes unreachable, every key is rejected (fails closed) rather
+than falling back to a stale or empty set - auth silently staying open
+because a secrets backend hiccupped would be far worse than a legitimate
+caller getting a retryable 401. SSH keys fetched from Vault are written
+to a private (`0600`) tempfile for the duration of one `ssh` call and
+deleted immediately after - key material never touches persistent disk.
+
+AppRole/Kubernetes Vault auth methods and dynamic secrets aren't built
+yet; only a static `VAULT_TOKEN` is supported today.
+
 ---
 
 ## Specifying Action, Target Node, and Controller

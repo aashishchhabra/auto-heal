@@ -330,16 +330,57 @@
 
 ### Stories & Tasks
 - **Story 1: Secret Management Integration**
-  - Task: Integrate with Vault/AWS Secrets Manager _(2d)_
-  - Task: Refactor config to use secrets _(1d)_
+  - Task: Integrate with Vault/AWS Secrets Manager **[PARTIAL - Vault only, KV v2 + static token]**
+    - API keys (`config/auth.yaml`) and controller SSH private keys
+      (`config/controllers.yaml`) can both be resolved from Vault; fully
+      opt-in, existing plaintext config keeps working unchanged. AWS
+      Secrets Manager, AppRole/Kubernetes Vault auth, and dynamic
+      secrets are not built. See `src/vault.py` and the "Secrets via
+      Vault" section of `docs/ACTION_ONBOARDING_GUIDE.md`.
+  - Task: Refactor config to use secrets **[COMPLETE for the two fields above]**
 - **Story 2: RBAC & API Keys**
-  - Task: Per-action/controller API keys _(2d)_
-  - Task: Role-based access control for endpoints _(2d)_
-- **Story 3: Rate Limiting & Cooldowns**
-  - Task: Implement per-action rate limits _(1d)_
-  - Task: Add cooldowns and impact simulation _(1d)_
+  - Task: Per-action/controller API keys
+  - Task: Role-based access control for endpoints **[COMPLETE]**
+    - Three roles (admin/operator/readonly) gate `controller_override`,
+      `audit_read`, `approvals_read`, `approve_actions`. Still coarse:
+      no way to scope a single key to one action/controller.
+- **Story 3: Rate Limiting & Cooldowns** **[COMPLETE]**
+  - Task: Implement per-action rate limits **[COMPLETE]**
+    - `config/rate_limits.yaml` - per-role and per-action limits on
+      `/webhook`. See `src/ratelimit.py`.
+  - Task: Add cooldowns and impact simulation **[COMPLETE - cooldowns;
+    impact simulation not built]**
+    - `cooldown_seconds`/`cooldown_key_param` per action, persisted
+      across restarts. See `src/cooldown.py`. "Impact simulation"
+      (predicting blast radius before executing) is a separate,
+      unbuilt idea - dry_run only simulates the execution itself, not
+      its downstream effect.
 
 **Phase 12 Estimate:** 9d
+
+### Addendum: Kubernetes-Native Execution (Deferred)
+The `oc` controller type executes by SSHing to a bastion host that
+already has an `oc` session, then running `oc`/`kubectl` commands there -
+the same model as the Ansible controllers. This is a reasonable fit for
+Ansible (SSH-to-a-control-node is the standard pattern), but a slightly
+awkward one for Kubernetes/OpenShift specifically, where the idiomatic
+approach is direct, RBAC-scoped API access with no bastion and no
+expiring `oc login` session to babysit.
+
+Two ways to close that gap were considered:
+- **(A) Kubeconfig-from-Vault, still shelling out to `oc`/`kubectl`** - a
+  small extension reusing the same secret-materialization pattern built
+  for SSH keys in this phase (fetch from Vault, write to a `0600`
+  tempfile, use for one command, delete).
+- **(B) True Kubernetes API-client integration** - actions become
+  structured API calls (e.g. the `kubernetes` Python client patching a
+  Deployment) with RBAC-scoped ServiceAccount tokens instead of a full
+  kubeconfig, replacing `command:` string execution entirely for this
+  controller type. A new execution primitive and action schema, not a
+  secrets-management change.
+
+Decision: skip (A), defer (B) to its own future phase. The `oc`
+controller stays SSH-only for now.
 
 ---
 

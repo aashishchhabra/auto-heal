@@ -1,8 +1,12 @@
 import json
+import os
 import shlex
 import subprocess
+import tempfile
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
+
+from src.vault import vault_client, VaultUnavailableError
 
 logger = logging.getLogger("autoheal.executor")
 
@@ -167,6 +171,43 @@ class ActionExecutor:
             return " ".join(parts)
         return None
 
+    def _resolve_ssh_key(
+        self, ssh_key: Optional[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Resolves `ssh_key` to an actual file path to hand to `ssh -i`. A
+        plain path (the existing behavior) is returned unchanged. A
+        "vault:<path>#<field>" reference (field defaults to
+        "private_key" if omitted) is fetched from Vault and materialized
+        to a private, caller-owned tempfile (mode 0600) - the key
+        material never touches persistent disk, only one ephemeral file
+        for the duration of a single ssh call.
+
+        Returns (path_to_use_with_ssh, tempfile_path_to_clean_up_or_None).
+        Raises VaultUnavailableError if a vault: reference can't be
+        resolved - callers must treat that as a hard failure, not fall
+        back to running ssh with no key.
+        """
+        if not ssh_key or not ssh_key.startswith("vault:"):
+            return ssh_key, None
+        ref = ssh_key.removeprefix("vault:")
+        path, _, field = ref.partition("#")
+        field = field or "private_key"
+        secret = vault_client.get_secret(path)
+        if field not in secret:
+            raise VaultUnavailableError(
+                f"Vault secret at '{path}' has no field '{field}'"
+            )
+        fd, tmp_path = tempfile.mkstemp(prefix="autoheal-sshkey-")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(secret[field])
+            os.chmod(tmp_path, 0o600)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
+        return tmp_path, tmp_path
+
     def run_remote(
         self,
         controller: dict,
@@ -225,43 +266,64 @@ class ActionExecutor:
                 success=True, stdout=msg, stderr="", exit_code=0, error=None
             )
 
-        ssh_cmd = [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "ConnectTimeout=10",
-        ]
-        if ssh_key:
-            ssh_cmd += ["-i", ssh_key]
-        ssh_cmd += [f"{ssh_user}@{host}", remote_cmd]
+        try:
+            resolved_ssh_key, ssh_key_tmp_path = self._resolve_ssh_key(ssh_key)
+        except VaultUnavailableError as e:
+            logger.error(f"Failed to resolve SSH key from Vault: {e}")
+            return ActionExecutionResult(
+                False, "", "", 1, error=f"Failed to resolve SSH key from Vault: {e}"
+            )
 
         try:
-            logger.info(f"Running remote command on {ssh_user}@{host}: {remote_cmd}")
-            proc = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=600)
-            if proc.returncode == SSH_CONNECTION_FAILURE_EXIT_CODE:
-                detail = proc.stderr.strip() or "SSH exited with code 255"
-                logger.error(f"SSH connection to {ssh_user}@{host} failed: {detail}")
-                return ActionExecutionResult(
-                    False,
-                    proc.stdout,
-                    proc.stderr,
-                    proc.returncode,
-                    error=f"SSH connection to {ssh_user}@{host} failed: {detail}",
+            ssh_cmd = [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "ConnectTimeout=10",
+            ]
+            if resolved_ssh_key:
+                ssh_cmd += ["-i", resolved_ssh_key]
+            ssh_cmd += [f"{ssh_user}@{host}", remote_cmd]
+
+            try:
+                logger.info(
+                    f"Running remote command on {ssh_user}@{host}: {remote_cmd}"
                 )
-            return ActionExecutionResult(
-                success=proc.returncode == 0,
-                stdout=proc.stdout,
-                stderr=proc.stderr,
-                exit_code=proc.returncode,
-            )
-        except subprocess.TimeoutExpired as e:
-            logger.error(f"Remote execution on {host} timed out: {e}")
-            return ActionExecutionResult(
-                False, "", "", 1, error=f"Remote execution timed out: {e}"
-            )
-        except Exception as e:
-            logger.error(f"Remote execution on {host} failed: {e}")
-            return ActionExecutionResult(False, "", "", 1, error=str(e))
+                proc = subprocess.run(
+                    ssh_cmd, capture_output=True, text=True, timeout=600
+                )
+                if proc.returncode == SSH_CONNECTION_FAILURE_EXIT_CODE:
+                    detail = proc.stderr.strip() or "SSH exited with code 255"
+                    logger.error(
+                        f"SSH connection to {ssh_user}@{host} failed: {detail}"
+                    )
+                    return ActionExecutionResult(
+                        False,
+                        proc.stdout,
+                        proc.stderr,
+                        proc.returncode,
+                        error=f"SSH connection to {ssh_user}@{host} failed: {detail}",
+                    )
+                return ActionExecutionResult(
+                    success=proc.returncode == 0,
+                    stdout=proc.stdout,
+                    stderr=proc.stderr,
+                    exit_code=proc.returncode,
+                )
+            except subprocess.TimeoutExpired as e:
+                logger.error(f"Remote execution on {host} timed out: {e}")
+                return ActionExecutionResult(
+                    False, "", "", 1, error=f"Remote execution timed out: {e}"
+                )
+            except Exception as e:
+                logger.error(f"Remote execution on {host} failed: {e}")
+                return ActionExecutionResult(False, "", "", 1, error=str(e))
+        finally:
+            if ssh_key_tmp_path:
+                try:
+                    os.unlink(ssh_key_tmp_path)
+                except OSError:
+                    pass

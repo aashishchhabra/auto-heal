@@ -17,6 +17,7 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 - Structured logging and audit trail
 - Slack/Teams notifications on action execution
 - Role-based access control
+- Optional HashiCorp Vault-backed secrets (API keys, controller SSH keys)
 - Comprehensive test suite and CI/CD integration
 
 ## Directory Structure

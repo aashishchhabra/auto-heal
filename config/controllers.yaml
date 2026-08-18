@@ -21,3 +21,12 @@ controllers:
     ssh_key: /root/.ssh/id_rsa
   local:
     type: local
+  # ssh_key also accepts a Vault reference instead of a file path:
+  #   ssh_key: "vault:secret/data/auto-healer/controllers/dc2-oc"
+  # or, if the private key is stored under a field other than the
+  # "private_key" default:
+  #   ssh_key: "vault:secret/data/auto-healer/controllers/dc2-oc#ssh_private_key"
+  # The key material is fetched from Vault and written to a private
+  # (mode 0600) tempfile just for the duration of a single ssh call, then
+  # deleted immediately after - it never touches persistent disk. See
+  # src/executor.py::ActionExecutor._resolve_ssh_key.
