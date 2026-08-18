@@ -85,6 +85,90 @@ Access" below), the rendered command is run on the controller over SSH,
 with each parameter value shell-quoted first so parameter values can't
 break out into arbitrary shell commands.
 
+### Direct Kubernetes API Actions (`kube_action`)
+An alternative to the SSH+`oc` approach above: `type: kubeapi` controllers
+talk to the Kubernetes/OpenShift API server directly - no SSH, no
+`oc`/`kubectl` subprocess. Use this when Auto-Healer runs inside (or has
+direct network + RBAC access to) the cluster it's healing, and you want
+credentials scoped to exactly the operations needed rather than an `oc`
+session's full access.
+
+`kube_action` is a **closed set of verbs**, not a generic "patch anything"
+API proxy - each one is a specific, reviewed operation:
+
+| Verb | Does |
+|---|---|
+| `rollout_restart` | Restarts a Deployment/StatefulSet/DaemonSet (same effect as `oc rollout restart`) |
+| `delete_pod` | Deletes a Pod, letting its controller recreate it |
+| `scale` | Sets `replicas` on a Deployment/StatefulSet/ReplicaSet |
+| `cordon_node` / `uncordon_node` | Marks a Node (un)schedulable |
+| `drain_node` | Cordons a Node, then evicts every non-DaemonSet Pod on it (respects PodDisruptionBudgets - a Pod blocked by its PDB is reported as a failure, not silently skipped) |
+| `patch_configmap` | Merges new key/value pairs into a ConfigMap's `data` |
+
+```yaml
+restart_deployment_kubeapi:
+  kube_action: rollout_restart
+  resource: deployment          # deployment | statefulset | daemonset
+  name: "{deployment}"
+  namespace: "{namespace}"
+  default_controller: k8s-in-cluster
+  parameters:
+    namespace: "default"
+  cooldown_seconds: 300
+  cooldown_key_param: deployment
+```
+`scale` and `patch_configmap` take their extra values through `data:`
+(also `{param}`-templated):
+```yaml
+scale_deployment:
+  kube_action: scale
+  resource: deployment
+  name: "{deployment}"
+  namespace: "{namespace}"
+  data:
+    replicas: "{replicas}"
+```
+Node-targeting verbs (`cordon_node`/`uncordon_node`/`drain_node`) use
+`node_name:` instead of `name:`/`namespace:` (Nodes are cluster-scoped).
+
+**Controller credentials** - three ways to authenticate, checked in this
+order:
+```yaml
+controllers:
+  # 1. In-cluster (recommended when Auto-Healer runs as a Pod in the
+  #    cluster it heals): zero credential config. Kubernetes auto-mounts
+  #    a ServiceAccount token; RBAC is controlled by which ServiceAccount
+  #    the Deployment binds to.
+  k8s-in-cluster:
+    type: kubeapi
+    in_cluster: true
+
+  # 2. Explicit ServiceAccount token + API server (recommended for a
+  #    remote cluster - scope the token's RBAC Role narrowly, e.g. patch
+  #    on deployments, delete on pods, nothing more):
+  k8s-prod:
+    type: kubeapi
+    api_server: https://api.prod.example.com:6443
+    token: "vault:secret/data/auto-healer/clusters/prod#token"
+    ca_cert: "vault:secret/data/auto-healer/clusters/prod#ca_cert"
+
+  # 3. A pre-existing kubeconfig, if that's what your platform team
+  #    already issues:
+  k8s-staging:
+    type: kubeapi
+    kubeconfig: "vault:secret/data/auto-healer/clusters/staging#kubeconfig"
+```
+`token`/`ca_cert`/`kubeconfig` all accept the same plain-file-path or
+`vault:<path>#<field>` forms as `ssh_key` (see "Secrets via Vault"
+below) - never a literal secret value inline. A token/kubeconfig without
+`ca_cert` disables TLS verification for that call and logs a warning;
+always set `ca_cert` for anything beyond local testing.
+
+All of this plugs into the same cooldowns, rate limits, approval
+workflow, RBAC, audit logging, and `dry_run` handling as every other
+action type - `dry_run` never builds a Kubernetes client or touches the
+API at all.
+
 ### Cooldowns (Preventing Repeat Execution)
 Add `cooldown_seconds` to an action to stop it being re-triggered too
 soon after it last ran - the safety net for a flapping alert that would

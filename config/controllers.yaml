@@ -30,3 +30,31 @@ controllers:
   # (mode 0600) tempfile just for the duration of a single ssh call, then
   # deleted immediately after - it never touches persistent disk. See
   # src/executor.py::ActionExecutor._resolve_ssh_key.
+
+  # type: kubeapi controllers talk to the Kubernetes/OpenShift API server
+  # directly - no SSH, no oc/kubectl subprocess. See kube_action entries
+  # in config/actions.yaml and src/executor.py::ActionExecutor.run_kube_action.
+  #
+  # In-cluster (recommended when Auto-Healer runs as a Pod inside the
+  # cluster it heals): zero credential config here at all. Kubernetes
+  # auto-mounts a ServiceAccount token; RBAC is controlled entirely by
+  # which ServiceAccount the Deployment binds to.
+  k8s-in-cluster:
+    type: kubeapi
+    in_cluster: true
+
+  # Remote cluster, explicit ServiceAccount token (recommended over a
+  # full kubeconfig - scope the token's RBAC Role to exactly the verbs
+  # this needs, e.g. patch on deployments, delete on pods, nothing more):
+  #   k8s-prod:
+  #     type: kubeapi
+  #     api_server: https://api.prod.example.com:6443
+  #     token: "vault:secret/data/auto-healer/clusters/prod#token"
+  #     ca_cert: "vault:secret/data/auto-healer/clusters/prod#ca_cert"
+  #
+  # Or, if you already have a scoped kubeconfig from your platform team:
+  #   k8s-staging:
+  #     type: kubeapi
+  #     kubeconfig: "vault:secret/data/auto-healer/clusters/staging#kubeconfig"
+  # token/ca_cert/kubeconfig all accept the same plain-file-path or
+  # vault:<path>#<field> forms as ssh_key above.

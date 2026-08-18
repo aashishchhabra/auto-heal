@@ -30,3 +30,19 @@ actions:
     # even if a flapping alert keeps re-triggering this action.
     cooldown_seconds: 300
     cooldown_key_param: deployment
+
+  restart_deployment_kubeapi:
+    description: >-
+      Same outcome as restart_deployment, but via a direct Kubernetes API
+      call (no SSH, no oc CLI) - patches the Deployment's pod template
+      annotation directly through the k8s-in-cluster controller's
+      ServiceAccount.
+    kube_action: rollout_restart
+    resource: deployment
+    name: "{deployment}"
+    namespace: "{namespace}"
+    default_controller: k8s-in-cluster
+    parameters:
+      namespace: "default"
+    cooldown_seconds: 300
+    cooldown_key_param: deployment
