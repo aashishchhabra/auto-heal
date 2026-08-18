@@ -25,6 +25,37 @@ def clean_approvals_state_file():
 
 
 @pytest.fixture(autouse=True, scope="session")
+def clean_cooldown_state_file():
+    """Same reasoning as clean_approvals_state_file, for logs/cooldowns.json."""
+    import src.main as main
+
+    def _remove():
+        for path in (main.COOLDOWN_STATE_PATH, f"{main.COOLDOWN_STATE_PATH}.tmp"):
+            if os.path.exists(path):
+                os.remove(path)
+
+    _remove()
+    yield
+    _remove()
+
+
+@pytest.fixture(autouse=True)
+def reset_cooldown_tracker():
+    """
+    cooldown_tracker is a single module-level instance shared by every
+    test in the session (like approval_queue). Unlike the approval queue,
+    leftover cooldown records would silently block unrelated tests from
+    executing the same action again - so reset the in-memory state before
+    every test, not just once per session.
+    """
+    import src.main as main
+
+    main.cooldown_tracker._last_run.clear()
+    yield
+    main.cooldown_tracker._last_run.clear()
+
+
+@pytest.fixture(autouse=True, scope="session")
 def patch_subprocess_default():
     """
     Session-wide safety net: nothing in the suite should shell out for real

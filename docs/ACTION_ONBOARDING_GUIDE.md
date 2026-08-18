@@ -85,6 +85,33 @@ Access" below), the rendered command is run on the controller over SSH,
 with each parameter value shell-quoted first so parameter values can't
 break out into arbitrary shell commands.
 
+### Cooldowns (Preventing Repeat Execution)
+Add `cooldown_seconds` to an action to stop it being re-triggered too
+soon after it last ran - the safety net for a flapping alert that would
+otherwise re-run the same remediation every few seconds. Optionally add
+`cooldown_key_param`, naming one of the action's parameters, so the
+cooldown is scoped per-target instead of blocking the action globally
+(e.g. restarting `web` shouldn't block restarting `api`):
+```yaml
+restart_deployment:
+  command: "oc rollout restart deployment/{deployment} -n {namespace}"
+  default_controller: dc2-oc
+  parameters:
+    namespace: "default"
+  cooldown_seconds: 300
+  cooldown_key_param: deployment
+```
+While in cooldown, `/webhook` returns `409 Conflict` with
+`cooldown_remaining_seconds` in the body, and an audit log entry is still
+written (`blocked_reason: "cooldown"`) so the suppression is visible. For
+`approval_required` actions, cooldown is checked at approve time, not at
+queue time - the request can still be queued, and a blocked approval
+leaves the entry `pending` so it can be retried once the cooldown clears.
+`dry_run` calls are exempt entirely: they don't check or consume the
+cooldown, since they never touch real infrastructure. Actions with no
+`cooldown_seconds` configured (the default) are never rate-limited by
+this mechanism.
+
 ### Custom Output Parsing (Optional)
 If your script/playbook outputs JSON or custom text, document the expected output format in comments or the PR description. This helps reviewers and users understand the result structure.
 

@@ -14,6 +14,7 @@ from threading import Lock
 from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
 from src.actions import get_action_config, get_controller_config, discover_actions
 from src.executor import ActionExecutor
+from src.cooldown import CooldownTracker
 import logging.handlers
 from src.notifications import notification_sender
 
@@ -57,6 +58,9 @@ file_handler.setFormatter(JsonFormatter())
 logger.addHandler(file_handler)
 
 executor = ActionExecutor()
+
+COOLDOWN_STATE_PATH = os.path.join(os.path.dirname(__file__), "../logs/cooldowns.json")
+cooldown_tracker = CooldownTracker(COOLDOWN_STATE_PATH)
 
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
 
@@ -248,6 +252,54 @@ def get_approval_entry(entry_id):
         return _find_approval_entry_locked(entry_id)
 
 
+def cooldown_key_for(
+    action_config: dict, event_type: str, controller_name: str, params: dict
+) -> str:
+    """
+    Cooldown is scoped to (event_type, controller, optional dedup value)
+    so e.g. restarting nginx on host A doesn't block restarting nginx on
+    host B. The dedup value comes from whichever parameter an action
+    names via `cooldown_key_param` in config/actions.yaml (e.g.
+    "service_name"); actions that don't configure one are deduped just by
+    (event_type, controller).
+    """
+    dedup_param = action_config.get("cooldown_key_param")
+    dedup_value = params.get(dedup_param) if dedup_param else None
+    return cooldown_tracker.make_key(
+        event_type,
+        controller_name,
+        str(dedup_value) if dedup_value is not None else None,
+    )
+
+
+def cooldown_block_audit_entry(
+    event_type: str, controller_name: str, params: dict, api_key, role, dry_run: bool
+) -> dict:
+    return {
+        "user": api_key,
+        "role": role,
+        "action": event_type,
+        "controller": controller_name,
+        "controller_type": None,
+        "parameters": params,
+        "execution": {"success": False, "error": "blocked-by-cooldown"},
+        "client_ip": None,
+        "dry_run": dry_run,
+        "blocked_reason": "cooldown",
+    }
+
+
+def cooldown_block_response(event_type: str, controller_name: str, remaining: float):
+    detail = (
+        f"Action '{event_type}' on controller '{controller_name}' is in cooldown "
+        f"for {remaining:.0f} more second(s)"
+    )
+    return JSONResponse(
+        status_code=409,
+        content={"detail": detail, "cooldown_remaining_seconds": round(remaining, 1)},
+    )
+
+
 def is_local_controller(controller_config: dict) -> bool:
     """
     True for controllers Auto-Healer should run against directly on this
@@ -359,6 +411,20 @@ async def webhook(request: Request):
             "status": "pending",
             "detail": "Action requires approval before execution.",
         }
+    # Cooldown: skip entirely for dry_run, which never touches real
+    # infrastructure and so has nothing to protect against.
+    cooldown_seconds = action_config.get("cooldown_seconds", 0)
+    cd_key = cooldown_key_for(action_config, event_type, controller_name, params)
+    if not dry_run and cooldown_seconds:
+        remaining = cooldown_tracker.seconds_remaining(cd_key, cooldown_seconds)
+        if remaining is not None:
+            write_audit_log(
+                cooldown_block_audit_entry(
+                    event_type, controller_name, params, api_key, role, dry_run
+                )
+            )
+            return cooldown_block_response(event_type, controller_name, remaining)
+
     # Dry-run support
     exec_result = execute_action(action_config, controller_config, params, dry_run)
     if exec_result is None:
@@ -367,6 +433,11 @@ async def webhook(request: Request):
             status_code=400,
             content={"detail": "No playbook, script, or command defined for action"},
         )
+    if not dry_run and cooldown_seconds:
+        # Record on any real attempt, success or failure - a failing
+        # target retried in a tight loop is exactly the flapping scenario
+        # cooldown exists to prevent, not just a repeated success.
+        cooldown_tracker.record(cd_key)
     logger.info(f"Execution result: {exec_result.as_dict()}")
     # Write audit log
     audit_entry = {
@@ -575,6 +646,34 @@ def approve_approval(approval_id: str, request: Request):
                 status_code=403,
                 content={"detail": "You cannot approve your own request"},
             )
+        payload = WebhookPayload(**entry["payload"])
+        event_type = payload.event_type
+        action_config = get_action_config(event_type)
+        controller_name = payload.controller_override or action_config.get(
+            "default_controller"
+        )
+        controller_config = get_controller_config(controller_name)
+        params = action_config.get("parameters", {}).copy()
+        params.update(payload.parameters or {})
+        dry_run = getattr(payload, "dry_run", False)
+        cooldown_seconds = action_config.get("cooldown_seconds", 0)
+        cd_key = cooldown_key_for(action_config, event_type, controller_name, params)
+        if not dry_run and cooldown_seconds:
+            remaining = cooldown_tracker.seconds_remaining(cd_key, cooldown_seconds)
+            if remaining is not None:
+                # Leave the entry pending - the cooldown will clear on its
+                # own and the approver can retry, nothing was consumed.
+                write_audit_log(
+                    cooldown_block_audit_entry(
+                        event_type,
+                        controller_name,
+                        params,
+                        api_key,
+                        approver_role,
+                        dry_run,
+                    )
+                )
+                return cooldown_block_response(event_type, controller_name, remaining)
         # Claim it immediately, while still holding the lock, so a
         # concurrent approve/reject on the same entry can't also pass the
         # pending check and double-execute it.
@@ -585,16 +684,6 @@ def approve_approval(approval_id: str, request: Request):
 
     # Execute outside the lock - this can take a while (SSH, ansible-playbook)
     # and shouldn't block /approvals reads or other approve/reject calls.
-    payload = WebhookPayload(**entry["payload"])
-    event_type = payload.event_type
-    action_config = get_action_config(event_type)
-    controller_name = payload.controller_override or action_config.get(
-        "default_controller"
-    )
-    controller_config = get_controller_config(controller_name)
-    params = action_config.get("parameters", {}).copy()
-    params.update(payload.parameters or {})
-    dry_run = getattr(payload, "dry_run", False)
     exec_result = execute_action(action_config, controller_config, params, dry_run)
     if exec_result is None:
         with approval_lock:
@@ -607,6 +696,8 @@ def approve_approval(approval_id: str, request: Request):
             status_code=400,
             content={"detail": "No playbook, script, or command defined for action"},
         )
+    if not dry_run and cooldown_seconds:
+        cooldown_tracker.record(cd_key)
     with approval_lock:
         entry["result"] = exec_result.as_dict()
         _save_approval_queue_locked()

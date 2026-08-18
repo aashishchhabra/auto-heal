@@ -26,3 +26,7 @@ actions:
     default_controller: dc2-oc
     parameters:
       namespace: "default"
+    # Don't restart the same deployment more than once every 5 minutes,
+    # even if a flapping alert keeps re-triggering this action.
+    cooldown_seconds: 300
+    cooldown_key_param: deployment
