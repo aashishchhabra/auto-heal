@@ -22,9 +22,10 @@ def test_caller_rate_limit_blocks_after_role_limit(monkeypatch):
         resp = client.post(
             "/webhook", json=payload, headers=get_headers("readonly-key")
         )
-        # readonly can't execute anyway (no permission needed for
-        # /webhook itself - it's action execution, not overriding), so
-        # these calls just need to not be rate-limited yet.
+        # readonly's execute_actions permission is false, so this always
+        # 403s rather than executing - but rate limiting is checked
+        # first regardless, so these calls just need to not be
+        # rate-limited yet.
         assert resp.status_code != 429
 
     resp = client.post("/webhook", json=payload, headers=get_headers("readonly-key"))

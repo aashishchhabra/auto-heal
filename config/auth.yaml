@@ -2,18 +2,21 @@ roles:
   admin:
     permissions:
       - controller_override: true
+      - execute_actions: true
       - audit_read: true
       - approvals_read: true
       - approve_actions: true
   operator:
     permissions:
       - controller_override: false
+      - execute_actions: true
       - audit_read: true
       - approvals_read: true
       - approve_actions: true
   readonly:
     permissions:
       - controller_override: false
+      - execute_actions: false
       - audit_read: true
       - approvals_read: true
       - approve_actions: false
@@ -23,15 +26,37 @@ api_keys:
   "operator-key": operator
   "readonly-key": readonly
 
+# api_keys entries may also be a dict instead of a plain role string, to
+# additionally restrict which specific actions and/or controllers that
+# one key may use - on top of whatever its role already permits. This is
+# for handing out a narrowly-scoped key (e.g. to a CI pipeline) without
+# creating a whole new role for it:
+#
+# api_keys:
+#   "admin-key": admin
+#   "ci-restart-key":
+#     role: operator
+#     allowed_actions: ["restart_deployment", "restart_deployment_kubeapi"]
+#     allowed_controllers: ["dc1-ansible", "k8s-in-cluster"]
+#
+# Omitting allowed_actions/allowed_controllers (or using a plain role
+# string, as above) leaves that dimension unrestricted - the key may use
+# any action/controller its role otherwise permits. An empty list ([])
+# denies everything for that dimension, which is different from omitting
+# it. See src/auth.py::is_action_allowed_for_key /
+# is_controller_allowed_for_key, and the "Fine-grained API key scoping"
+# section of docs/ACTION_ONBOARDING_GUIDE.md.
+
 # Instead of the literal map above, api_keys can be resolved from a
 # HashiCorp Vault KV v2 secret at request time (requires VAULT_ADDR, plus
 # either VAULT_TOKEN or VAULT_AUTH_METHOD=kubernetes + VAULT_K8S_ROLE, to
 # be set in the environment - see "Vault auth methods" in
 # docs/ACTION_ONBOARDING_GUIDE.md). The secret at that path must be
-# shaped exactly like the literal map: {api_key: role}. If this is
-# configured and Vault becomes unreachable, ALL keys are rejected (fails
-# closed) rather than falling back to a stale or partial set - see
-# src/auth.py::_resolve_api_keys.
+# shaped exactly like the literal map: {api_key: role} (each value may
+# still be either a plain role string or a scope dict, as above). If
+# this is configured and Vault becomes unreachable, ALL keys are
+# rejected (fails closed) rather than falling back to a stale or partial
+# set - see src/auth.py::_resolve_api_keys.
 #
 # api_keys:
 #   vault_path: "secret/data/auto-healer/api-keys"
