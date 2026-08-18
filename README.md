@@ -16,7 +16,7 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 - Webhook API for triggering healing actions
 - Structured logging and audit trail
 - Slack/Teams notifications on action execution
-- Role-based access control
+- Role-based access control, plus optional per-API-key scoping to a specific set of actions/controllers
 - Optional HashiCorp Vault-backed secrets (API keys, controller SSH/kube credentials), with static-token or in-cluster Kubernetes Vault auth
 - Direct Kubernetes/OpenShift API actions (`kube_action`) alongside SSH-based execution
 - Comprehensive test suite and CI/CD integration
@@ -65,7 +65,11 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 Approving/rejecting requires the `approve_actions` permission (see
 `config/auth.yaml`; `readonly` does not have it by default), and a
 requester can never approve or reject their own pending request, even
-with a role that otherwise has `approve_actions`.
+with a role that otherwise has `approve_actions`. Triggering `/webhook`
+at all requires `execute_actions` (`readonly` doesn't have this either);
+individual API keys can additionally be scoped to a narrower set of
+actions/controllers than their role otherwise permits - see "Fine-Grained
+API Key Scoping" in `docs/ACTION_ONBOARDING_GUIDE.md`.
 
 ## Usage Examples
 

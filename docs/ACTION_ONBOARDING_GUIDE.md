@@ -225,6 +225,49 @@ from repeated remediation. Rate limiting applies to `/webhook` only
 applied to `/approvals/{id}/approve`, `/approvals/{id}/reject`, or
 read-only endpoints.
 
+### Fine-Grained API Key Scoping (RBAC, per key)
+Role-based permissions (`controller_override`, `execute_actions`,
+`audit_read`, `approvals_read`, `approve_actions` in `config/auth.yaml`)
+are the first, coarse layer of access control: they gate what a *role*
+can do at all. `readonly` is the one built-in role without
+`execute_actions`, so a readonly key gets `403` from `/webhook`
+outright, before any action-specific logic runs.
+
+On top of that, an individual API key can be scoped to a specific
+allow-list of actions and/or controllers, narrower than what its role
+would otherwise permit - useful for handing a single-purpose key (a CI
+pipeline, an alerting integration) only the exact capability it needs,
+without inventing a whole new role for it:
+```yaml
+api_keys:
+  "admin-key": admin              # unrestricted - the original, still-default shape
+  "ci-restart-key":
+    role: operator
+    allowed_actions: ["restart_deployment", "restart_deployment_kubeapi"]
+    allowed_controllers: ["dc1-ansible", "k8s-in-cluster"]
+```
+`allowed_actions`/`allowed_controllers` are each independently optional;
+omitting one (or using the plain-string shape, as `admin-key` does
+above) leaves that dimension unrestricted. An empty list (`[]`) is not
+the same as omitting it - it denies everything for that dimension.
+`allowed_controllers` applies to a resolved controller regardless of how
+it was chosen - an action's `default_controller` is checked against it
+exactly the same way a `controller_override` is.
+
+This is enforced in three places, all fed by the same
+`is_action_allowed_for_key`/`is_controller_allowed_for_key` checks in
+`src/auth.py`:
+- `/webhook`'s direct-execution path - a disallowed action/controller
+  gets `403` immediately, before dry-run or cooldown are even checked.
+- `/webhook`'s `approval_required` path - the same checks gate *queuing*
+  the request, not just executing it; a key can't get a disallowed
+  action into the approval queue for someone else to approve.
+- `/approvals/{id}/approve` - the *original requester's* scope (not the
+  approver's) is re-checked at approve time, in case `config/auth.yaml`
+  changed while the request sat pending. If it's no longer permitted,
+  the entry is marked `rejected` with a reason rather than left
+  dangling `pending`.
+
 ### Custom Output Parsing (Optional)
 If your script/playbook outputs JSON or custom text, document the expected output format in comments or the PR description. This helps reviewers and users understand the result structure.
 

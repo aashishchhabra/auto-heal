@@ -342,12 +342,25 @@
       dynamic secrets are not built. See `src/vault.py` and the "Secrets
       via Vault" section of `docs/ACTION_ONBOARDING_GUIDE.md`.
   - Task: Refactor config to use secrets **[COMPLETE for the two fields above]**
-- **Story 2: RBAC & API Keys**
-  - Task: Per-action/controller API keys
+- **Story 2: RBAC & API Keys** **[COMPLETE]**
+  - Task: Per-action/controller API keys **[COMPLETE]**
+    - An `api_keys` entry can be a scope dict (`role` +
+      `allowed_actions`/`allowed_controllers`) instead of a plain role
+      string, restricting one specific key to a subset of actions and/or
+      controllers on top of whatever its role permits. Enforced on
+      `/webhook` (both direct-execution and approval-queuing) and
+      re-checked against the original requester at
+      `/approvals/{id}/approve` in case config changed while the
+      request was pending. Along the way, added the missing
+      `execute_actions` role permission itself - previously any
+      authenticated key, including `readonly`, could trigger `/webhook`
+      regardless of role. See `src/auth.py::is_action_allowed_for_key` /
+      `is_controller_allowed_for_key` and "Fine-Grained API Key Scoping"
+      in `docs/ACTION_ONBOARDING_GUIDE.md`.
   - Task: Role-based access control for endpoints **[COMPLETE]**
     - Three roles (admin/operator/readonly) gate `controller_override`,
-      `audit_read`, `approvals_read`, `approve_actions`. Still coarse:
-      no way to scope a single key to one action/controller.
+      `execute_actions`, `audit_read`, `approvals_read`,
+      `approve_actions`.
 - **Story 3: Rate Limiting & Cooldowns** **[COMPLETE]**
   - Task: Implement per-action rate limits **[COMPLETE]**
     - `config/rate_limits.yaml` - per-role and per-action limits on

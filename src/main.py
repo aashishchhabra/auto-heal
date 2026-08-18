@@ -11,7 +11,13 @@ import sys
 import json
 from threading import Lock
 
-from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
+from src.auth import (
+    APIKeyAuthMiddleware,
+    get_role_from_api_key,
+    has_permission,
+    is_action_allowed_for_key,
+    is_controller_allowed_for_key,
+)
 from src.actions import get_action_config, get_controller_config, discover_actions
 from src.executor import ActionExecutor
 from src.cooldown import CooldownTracker
@@ -445,6 +451,25 @@ async def webhook(request: Request):
         )
         return rate_limit_block_response(action_retry_after)
 
+    # Role-level gate: can this role trigger actions at all? (readonly
+    # cannot - it's audit_read/approvals_read only.) Checked after both
+    # rate limits so a role mismatch still consumes the caller's rate
+    # budget rather than offering an unlimited free 403 to spam.
+    if not has_permission(role, "execute_actions"):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Executing actions is not permitted for your role"},
+        )
+    # Key-level gate: this specific API key may be scoped to a subset of
+    # actions on top of whatever its role permits (see config/auth.yaml).
+    if not is_action_allowed_for_key(api_key, event_type):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": f"Action '{event_type}' is not permitted for your API key"
+            },
+        )
+
     # Controller override logic
     controller_override = payload.controller_override
     controller_name = controller_override or action_config.get("default_controller")
@@ -457,6 +482,9 @@ async def webhook(request: Request):
     controller_config = get_controller_config(controller_name)
     if not controller_config:
         return JSONResponse(status_code=400, content={"detail": "Unknown controller"})
+    if not is_controller_allowed_for_key(api_key, controller_name):
+        detail = f"Controller '{controller_name}' is not permitted for your API key"
+        return JSONResponse(status_code=403, content={"detail": detail})
     # Parameter merging
     params = action_config.get("parameters", {}).copy()
     params.update(payload.parameters or {})
@@ -725,6 +753,26 @@ def approve_approval(approval_id: str, request: Request):
             "default_controller"
         )
         controller_config = get_controller_config(controller_name)
+        # Re-validate the ORIGINAL REQUESTER's permission to execute
+        # this action/controller, not the approver's - approving a
+        # request certifies sign-off on something the requester was
+        # themselves allowed to ask for, it doesn't grant new rights.
+        # Re-checked here (not just at queue time in /webhook) in case
+        # config/auth.yaml changed while this entry sat pending.
+        requester_key = entry["requested_by"]
+        requester_role = entry["role"]
+        if (
+            not has_permission(requester_role, "execute_actions")
+            or not is_action_allowed_for_key(requester_key, event_type)
+            or not is_controller_allowed_for_key(requester_key, controller_name)
+        ):
+            reason = (
+                "Requester is no longer permitted to execute this action/controller"
+            )
+            entry["status"] = "rejected"
+            entry["result"] = {"error": reason}
+            _save_approval_queue_locked()
+            return JSONResponse(status_code=403, content={"detail": reason})
         params = action_config.get("parameters", {}).copy()
         params.update(payload.parameters or {})
         dry_run = getattr(payload, "dry_run", False)
