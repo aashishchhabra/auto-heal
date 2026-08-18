@@ -208,6 +208,7 @@ Auto-Healer can be deployed to Kubernetes or OpenShift using the provided manife
 ## Onboarding & Contribution
 - See `docs/ACTION_ONBOARDING_GUIDE.md` for onboarding new actions, approval, and dry-run instructions.
 - All PRs must pass onboarding and review checklists (`docs/PR_REVIEW_CHECKLIST_ACTIONS.md`).
+- `docs/on-call-case-study.html` walks through an illustrative on-call night — Grafana/Alertmanager wired to Auto-Healer across bare metal, VMs, and an OpenShift cluster — as a concrete picture of how the pieces above fit together. Open it in a browser (GitHub renders it as source, not as a page).
 
 ## Project Metadata
 - **License:** MIT

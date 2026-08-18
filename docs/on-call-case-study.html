@@ -1,0 +1,936 @@
+<title>Shift Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #f3f5f8;
+    --surface: #ffffff;
+    --surface-2: #eceff3;
+    --border: #d8dee7;
+    --text: #171b22;
+    --text-dim: #5b6675;
+    --text-faint: #8892a0;
+    --accent: #c87f1e;
+    --accent-ink: #6e4711;
+    --accent-soft: rgba(200, 127, 30, 0.12);
+    --ok: #2f9e64;
+    --ok-soft: rgba(47, 158, 100, 0.12);
+    --critical: #c94a40;
+    --critical-soft: rgba(201, 74, 64, 0.1);
+    --shadow: 0 1px 2px rgba(23, 27, 34, 0.06), 0 8px 24px rgba(23, 27, 34, 0.05);
+    --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a0e14;
+      --surface: #121822;
+      --surface-2: #1a2230;
+      --border: #262f3d;
+      --text: #e7ecf3;
+      --text-dim: #8b96aa;
+      --text-faint: #5b6675;
+      --accent: #e8a33d;
+      --accent-ink: #ffd699;
+      --accent-soft: rgba(232, 163, 61, 0.14);
+      --ok: #57c785;
+      --ok-soft: rgba(87, 199, 133, 0.13);
+      --critical: #e2645b;
+      --critical-soft: rgba(226, 100, 91, 0.14);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0a0e14;
+    --surface: #121822;
+    --surface-2: #1a2230;
+    --border: #262f3d;
+    --text: #e7ecf3;
+    --text-dim: #8b96aa;
+    --text-faint: #5b6675;
+    --accent: #e8a33d;
+    --accent-ink: #ffd699;
+    --accent-soft: rgba(232, 163, 61, 0.14);
+    --ok: #57c785;
+    --ok-soft: rgba(87, 199, 133, 0.13);
+    --critical: #e2645b;
+    --critical-soft: rgba(226, 100, 91, 0.14);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent-ink, var(--accent)); }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  .wrap.wide { max-width: 900px; }
+
+  ::selection { background: var(--accent-soft); }
+
+  /* ---------- Hero ---------- */
+
+  .hero {
+    padding: 96px 0 64px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0 0 28px;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    animation: pulse 2.4s ease-in-out infinite;
+    flex: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot { animation: none; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  h1.headline {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(2.6rem, 6vw, 4.1rem);
+    line-height: 1.04;
+    letter-spacing: -0.01em;
+    margin: 0 0 28px;
+    text-wrap: balance;
+  }
+
+  h1.headline em {
+    font-style: normal;
+    color: var(--accent-ink, var(--accent));
+  }
+
+  .lede {
+    font-size: 1.2rem;
+    line-height: 1.55;
+    color: var(--text-dim);
+    max-width: 62ch;
+    margin: 0 0 36px;
+  }
+
+  .lede strong { color: var(--text); font-weight: 600; }
+
+  .cast-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-dim);
+    background: var(--surface);
+  }
+
+  .framing-note {
+    font-size: 13.5px;
+    color: var(--text-faint);
+    max-width: 62ch;
+    border-left: 2px solid var(--border);
+    padding-left: 14px;
+    line-height: 1.6;
+  }
+
+  /* ---------- Section scaffolding ---------- */
+
+  section { padding: 72px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  h2.section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .section-kicker {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  p { margin: 0 0 18px; max-width: 68ch; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ---------- Cast ---------- */
+
+  .cast-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  @media (max-width: 640px) { .cast-grid { grid-template-columns: 1fr; } }
+
+  .cast-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+
+  .cast-card h3 {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    margin: 0 0 10px;
+  }
+
+  .cast-card p { font-size: 14.5px; color: var(--text-dim); margin: 0; max-width: none; }
+
+  /* ---------- Timeline ---------- */
+
+  .timeline { position: relative; }
+
+  .entry {
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: 20px;
+    position: relative;
+    padding-bottom: 56px;
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
+  .entry.in-view { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .entry { opacity: 1; transform: none; transition: none; }
+  }
+
+  .entry:last-child { padding-bottom: 0; }
+
+  .entry::before {
+    content: "";
+    position: absolute;
+    left: 84px;
+    top: 6px;
+    bottom: -56px;
+    width: 1px;
+    background: var(--border);
+    transform: translateX(-0.5px);
+  }
+
+  .entry:last-child::before { display: none; }
+
+  .entry-time {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-faint);
+    padding-top: 3px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .entry-time .stamp {
+    position: relative;
+    display: inline-block;
+  }
+
+  .entry-time .stamp::after {
+    content: "";
+    position: absolute;
+    right: -22px;
+    top: 4px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--text-faint);
+  }
+
+  .entry.beat-ok .entry-time .stamp::after { border-color: var(--ok); }
+  .entry.beat-watch .entry-time .stamp::after { border-color: var(--accent); }
+
+  @media (max-width: 560px) {
+    .entry { grid-template-columns: 1fr; gap: 10px; }
+    .entry-time { text-align: left; }
+    .entry::before { display: none; }
+    .entry-time .stamp::after { display: none; }
+  }
+
+  .entry-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.32rem;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+
+  .entry-title .place {
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 0.62em;
+    color: var(--text-faint);
+    display: block;
+    letter-spacing: 0.02em;
+    margin-top: 4px;
+  }
+
+  .entry p { font-size: 15px; color: var(--text-dim); }
+  .entry p strong { color: var(--text); font-weight: 600; }
+
+  .payload {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+
+  .payload code {
+    font-family: var(--font-mono);
+    font-size: 12.6px;
+    color: var(--text);
+    white-space: pre;
+    line-height: 1.6;
+  }
+
+  .payload .k { color: var(--text-faint); }
+  .payload .v { color: var(--accent-ink, var(--accent)); }
+
+  .beat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .tag.guardrail { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink, var(--accent)); }
+  .tag.resolved { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+  .tag.escalated { background: var(--critical-soft); border-color: transparent; color: var(--critical); }
+
+  /* ---------- Diagram ---------- */
+
+  figure.diagram {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+
+  figure.diagram svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+  }
+
+  figure.diagram .accent-el { color: var(--accent); }
+  figure.diagram .ok-el { color: var(--ok); }
+
+  figure.diagram text { fill: currentColor; }
+  figure.diagram .label-strong { fill: var(--text); }
+
+  figcaption {
+    font-size: 13px;
+    color: var(--text-faint);
+    margin-top: 20px;
+    max-width: 60ch;
+  }
+
+  /* ---------- Guardrails grid ---------- */
+
+  .guard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  @media (max-width: 640px) { .guard-grid { grid-template-columns: 1fr; } }
+
+  .guard-item {
+    background: var(--surface);
+    padding: 24px;
+  }
+
+  .guard-item h3 {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    color: var(--accent-ink, var(--accent));
+    margin: 0 0 10px;
+  }
+
+  .guard-item p { font-size: 14px; color: var(--text-dim); margin: 0; max-width: none; }
+
+  /* ---------- Wiring snippet ---------- */
+
+  .flow-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin: 22px 0 10px;
+  }
+
+  .flow-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ---------- Morning / closing ---------- */
+
+  .verify-block {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 640px) { .verify-block { grid-template-columns: 1fr; } }
+
+  .closing {
+    text-align: center;
+    padding: 96px 0 120px;
+  }
+
+  .closing p.big {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 3.2vw, 2rem);
+    font-weight: 700;
+    max-width: 22ch;
+    margin: 0 auto 14px;
+    text-wrap: balance;
+  }
+
+  .closing p.small {
+    font-size: 14px;
+    color: var(--text-faint);
+    max-width: 46ch;
+    margin: 0 auto;
+  }
+
+  footer.credit {
+    text-align: center;
+    padding: 0 0 56px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow"><span class="dot" aria-hidden="true"></span>on-call · overnight · illustrative scenario</p>
+    <h1 class="headline">23:47.<br>Something in prod just <em>tipped over.</em></h1>
+    <p class="lede">
+      A platform team runs bare-metal log shippers, a VM web fleet, and an
+      OpenShift cluster full of Deployments and DaemonSets — watched, as most
+      teams' stacks are, by Grafana, Prometheus and Alertmanager. This is one
+      night on that team's rotation, <strong>with Auto-Healer sitting between
+      the alert and the phone.</strong>
+    </p>
+    <div class="cast-chips">
+      <span class="chip">Grafana + Prometheus + Alertmanager</span>
+      <span class="chip">Bare metal &amp; VM fleet — Ansible</span>
+      <span class="chip">OpenShift — Deployments &amp; DaemonSets</span>
+    </div>
+    <p class="framing-note">
+      What follows is an illustrative scenario, not a real incident report —
+      a composite of how a team could wire Auto-Healer into a stack they
+      already run. Hostnames, timestamps and Slack handles are invented for
+      clarity; the request payloads, config shapes and safety behavior are
+      exactly how the system in this repository works.
+    </p>
+  </div>
+</header>
+
+<section id="cast">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">Two people, one pager</h2>
+      <span class="section-kicker">Before the shift starts</span>
+    </div>
+    <div class="cast-grid">
+      <div class="cast-card">
+        <h3>The platform engineer</h3>
+        <p>
+          Spent Tuesday afternoon writing three files: which controller
+          reaches which infrastructure (<code>controllers.yaml</code>), which
+          alert maps to which remediation and under what limits
+          (<code>actions.yaml</code>), and who's allowed to trigger, override,
+          or approve what (<code>auth.yaml</code>). Isn't on call tonight.
+          Won't be woken up either way.
+        </p>
+      </div>
+      <div class="cast-card">
+        <h3>The on-call engineer</h3>
+        <p>
+          Carries the pager this week. Phone on the nightstand, ringer on.
+          Has no idea, going to sleep, which of tonight's alerts will need
+          them and which will already be handled by the time they check
+          Slack in the morning.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="shift">
+  <div class="wrap wide">
+    <div class="section-head">
+      <h2 class="section-title">The shift</h2>
+      <span class="section-kicker">23:47 → 04:03</span>
+    </div>
+
+    <div class="timeline">
+
+      <div class="entry beat-ok">
+        <div class="entry-time"><span class="stamp">23:47</span></div>
+        <div>
+          <h3 class="entry-title">A disk fills up<span class="place">log-shipper-04 · bare metal</span></h3>
+          <p><code>/var/log</code> crosses 91% on a log-shipping box. Grafana's
+          alert fires into Alertmanager, whose webhook receiver relays it as a
+          call to Auto-Healer:</p>
+          <div class="payload"><code>POST /webhook
+{ <span class="k">"event_type"</span>: <span class="v">"cleanup_disk"</span>,
+  <span class="k">"parameters"</span>: { <span class="k">"path"</span>: <span class="v">"/var/log"</span> },
+  <span class="k">"controller_override"</span>: <span class="v">"log-shipper-04"</span> }</code></div>
+          <p>Auto-Healer resolves <code>cleanup_disk</code> to its Ansible
+          controller, SSHes in, runs the cleanup script, and writes the result
+          to the audit chain. Four seconds, start to finish.</p>
+          <div class="beat-row">
+            <span class="tag resolved">auto-resolved</span>
+            <span class="tag">ansible · ssh</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="entry beat-watch">
+        <div class="entry-time"><span class="stamp">00:32</span></div>
+        <div>
+          <h3 class="entry-title">A service won't stay up<span class="place">web-02 · VM fleet</span></h3>
+          <p>An nginx health check fails on <code>web-02</code>.
+          <code>restart_service</code> runs, clean. Six minutes later, the same
+          check fails again — Auto-Healer restarts it a second time, because
+          nothing in <code>actions.yaml</code> puts a cooldown on this action.
+          <strong>At 00:41 it fires a third time</strong>, and this call is
+          rejected outright — <code>429</code>, before the action logic ever
+          runs — because the platform engineer set a per-action rate limit on
+          exactly this alert.</p>
+          <p>The on-call engineer sleeps through all three. What they find in
+          the morning isn't a mystery — it's three timestamped attempts and a
+          rate-limit block, which reads unambiguously as <em>this is
+          flapping, not a fluke</em>.</p>
+          <div class="beat-row">
+            <span class="tag guardrail">rate limit → 429</span>
+            <span class="tag">ansible · ssh</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="entry beat-ok">
+        <div class="entry-time"><span class="stamp">02:15</span></div>
+        <div>
+          <h3 class="entry-title">A Deployment crash-loops<span class="place">payment-service · OpenShift</span></h3>
+          <p>Restart counts climb on <code>payment-service</code>.
+          Auto-Healer calls a <code>kube_action</code> directly against the
+          Kubernetes API — no bastion, no SSH — using an in-cluster
+          ServiceAccount scoped to exactly this:</p>
+          <div class="payload"><code>POST /webhook
+{ <span class="k">"event_type"</span>: <span class="v">"restart_deployment_kubeapi"</span>,
+  <span class="k">"parameters"</span>: { <span class="k">"deployment"</span>: <span class="v">"payment-service"</span>,
+                  <span class="k">"namespace"</span>: <span class="v">"payments"</span> } }</code></div>
+          <p>The rollout restarts clean. This action carries a five-minute
+          cooldown keyed on the deployment name — if it crash-loops again
+          inside that window, Auto-Healer won't restart it a second time; it
+          writes <code>blocked-by-cooldown</code> and leaves the real bug for
+          a human, rather than papering over it with a tighter and tighter
+          restart loop.</p>
+          <div class="beat-row">
+            <span class="tag resolved">auto-resolved</span>
+            <span class="tag">kubeapi · direct, no ssh</span>
+            <span class="tag guardrail">5 min cooldown</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="entry beat-watch">
+        <div class="entry-time"><span class="stamp">04:03</span></div>
+        <div>
+          <h3 class="entry-title">A node goes unhealthy<span class="place">worker-12 · OpenShift DaemonSet</span></h3>
+          <p>This one's different — draining a node evicts real, running
+          workloads. The platform engineer marked this specific alert
+          <code>approval_required</code>, so Auto-Healer doesn't drain
+          anything; it queues the request and hands back an
+          <code>approval_id</code>, <code>200 pending</code>.</p>
+          <p>The team's on-call bot — a thin wrapper around <code>POST
+          /approvals/{"{"}id{"}"}/approve</code> — posts the pending request to
+          Slack. The on-call engineer reads it, taps approve from their phone,
+          and <em>then</em> Auto-Healer cordons the node, skips the DaemonSet's
+          own pods (they're supposed to be everywhere), and evicts the rest
+          respecting PodDisruptionBudgets.</p>
+          <p>Two minutes of attention, from bed, instead of a laptop and a
+          terminal at 4am.</p>
+          <div class="beat-row">
+            <span class="tag guardrail">approval required</span>
+            <span class="tag">kubeapi · drain_node</span>
+            <span class="tag resolved">resolved · 1 tap</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="mechanism">
+  <div class="wrap wide">
+    <div class="section-head">
+      <h2 class="section-title">What actually happens to that POST</h2>
+      <span class="section-kicker">The request's path</span>
+    </div>
+    <p style="margin-bottom:32px">
+      Every one of those four calls takes the same route. Most of what
+      distinguishes tonight's incidents is <em>which gate</em> stopped the
+      request, or waved it through.
+    </p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 700 860" role="img" aria-label="A request enters at Alertmanager, passes through rate-limit, cooldown and RBAC-scope checks (branching to a logged-but-blocked outcome if any fails), optionally waits for human approval, then Dispatch sends it to one of three controller types — Ansible over SSH, oc over SSH, or a direct in-cluster Kubernetes API call — whose results always converge into the tamper-evident audit chain, and, if not blocked, a Slack or Teams notification.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"></path>
+          </marker>
+        </defs>
+
+        <!-- central spine boxes -->
+        <g font-size="13">
+          <!-- Alertmanager -->
+          <rect x="40" y="30" width="280" height="80" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="180" y="63" text-anchor="middle" class="label-strong" font-weight="600">Grafana · Alertmanager</text>
+          <text x="180" y="84" text-anchor="middle" font-size="11.5">alert rule fires</text>
+
+          <!-- arrow to guardrails -->
+          <line x1="180" y1="110" x2="180" y2="168" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <text x="196" y="145" font-size="11.5">POST /webhook</text>
+
+          <!-- Guardrails -->
+          <rect x="40" y="170" width="280" height="150" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="180" y="196" text-anchor="middle" class="label-strong" font-weight="600">Guardrails</text>
+          <circle cx="66" cy="223" r="3" fill="currentColor"></circle>
+          <text x="78" y="227">rate limit — per caller &amp; per action</text>
+          <circle cx="66" cy="253" r="3" fill="currentColor"></circle>
+          <text x="78" y="257">cooldown — keyed per target</text>
+          <circle cx="66" cy="283" r="3" fill="currentColor"></circle>
+          <text x="78" y="287">scope — role + per-key RBAC</text>
+
+          <!-- guardrails -> blocked -->
+          <line x1="320" y1="245" x2="392" y2="245" stroke="currentColor" stroke-dasharray="3 4" marker-end="url(#arrow)"></line>
+          <text x="356" y="235" text-anchor="middle" font-size="11">fails</text>
+
+          <!-- guardrails -> approval -->
+          <line x1="180" y1="320" x2="180" y2="378" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <text x="196" y="355" font-size="11.5">passes</text>
+
+          <!-- blocked box -->
+          <rect x="400" y="190" width="260" height="110" rx="8" fill="none" stroke="currentColor" class="accent-el"></rect>
+          <text x="530" y="223" text-anchor="middle" font-weight="600">Blocked</text>
+          <text x="530" y="245" text-anchor="middle" font-size="11.5">409 cooldown / 429 rate limit</text>
+          <text x="530" y="264" text-anchor="middle" font-size="11.5">/ 403 scope</text>
+          <text x="530" y="285" text-anchor="middle" font-size="11" opacity="0.85">— no notification sent —</text>
+
+          <!-- Approval gate -->
+          <rect x="40" y="380" width="280" height="80" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="180" y="413" text-anchor="middle" class="label-strong" font-weight="600">Approval required?</text>
+          <text x="180" y="434" text-anchor="middle" font-size="11.5">set per alert, in actions config</text>
+
+          <!-- approval -> pending -->
+          <line x1="320" y1="420" x2="392" y2="420" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <text x="356" y="410" text-anchor="middle" font-size="11">yes</text>
+
+          <!-- pending box -->
+          <rect x="400" y="382" width="260" height="76" rx="8" fill="none" stroke="currentColor" class="accent-el"></rect>
+          <text x="530" y="410" text-anchor="middle" font-weight="600">Pending queue</text>
+          <text x="530" y="431" text-anchor="middle" font-size="11">human calls /approvals/:id/approve</text>
+
+          <!-- pending -> dispatch loop -->
+          <path d="M400,458 L360,458 L360,510 L320,510" fill="none" stroke="currentColor" marker-end="url(#arrow)"></path>
+          <text x="330" y="500" text-anchor="end" font-size="11">approved</text>
+
+          <!-- approval -> dispatch (no) -->
+          <line x1="180" y1="460" x2="180" y2="518" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <text x="196" y="495" font-size="11.5">no — auto-executes</text>
+
+          <!-- Dispatch -->
+          <rect x="40" y="520" width="280" height="80" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="180" y="553" text-anchor="middle" class="label-strong" font-weight="600">Dispatch</text>
+          <text x="180" y="574" text-anchor="middle" font-size="11.5">picks controller for the action</text>
+
+          <!-- dispatch -> controllers -->
+          <line x1="320" y1="545" x2="392" y2="512" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <line x1="320" y1="560" x2="392" y2="560" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <line x1="320" y1="575" x2="392" y2="608" stroke="currentColor" marker-end="url(#arrow)"></line>
+
+          <!-- controller boxes -->
+          <rect x="400" y="480" width="260" height="62" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="530" y="504" text-anchor="middle" font-weight="600" font-size="12.5">ansible · ssh</text>
+          <text x="530" y="521" text-anchor="middle" font-size="11">bare metal &amp; VMs</text>
+
+          <rect x="400" y="554" width="260" height="62" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="530" y="578" text-anchor="middle" font-weight="600" font-size="12.5">oc · ssh + cli</text>
+          <text x="530" y="595" text-anchor="middle" font-size="11">OpenShift, via bastion</text>
+
+          <rect x="400" y="628" width="260" height="62" rx="8" fill="none" stroke="currentColor" class="ok-el"></rect>
+          <text x="530" y="652" text-anchor="middle" font-weight="600" font-size="12.5">kubeapi · direct</text>
+          <text x="530" y="669" text-anchor="middle" font-size="11">in-cluster API, no SSH</text>
+
+          <!-- controllers converge -->
+          <line x1="530" y1="542" x2="530" y2="730" stroke="currentColor"></line>
+          <line x1="530" y1="616" x2="530" y2="730" stroke="currentColor"></line>
+          <line x1="530" y1="690" x2="530" y2="730" stroke="currentColor"></line>
+          <circle cx="530" cy="730" r="3" fill="currentColor"></circle>
+          <line x1="530" y1="730" x2="530" y2="748" stroke="currentColor" marker-end="url(#arrow)"></line>
+          <line x1="527" y1="730" x2="270" y2="730" stroke="currentColor"></line>
+          <line x1="270" y1="730" x2="270" y2="748" stroke="currentColor" marker-end="url(#arrow)"></line>
+
+          <!-- blocked -> audit chain, routed via left margin -->
+          <path d="M400,300 L14,300 L14,782 L38,782" fill="none" stroke="currentColor" stroke-dasharray="3 4" marker-end="url(#arrow)" class="accent-el"></path>
+
+          <!-- bottom row -->
+          <rect x="40" y="750" width="280" height="80" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="180" y="783" text-anchor="middle" class="label-strong" font-weight="600">Audit chain</text>
+          <text x="180" y="804" text-anchor="middle" font-size="11">hash-linked · every attempt, blocked or not</text>
+
+          <rect x="400" y="750" width="260" height="80" rx="8" fill="none" stroke="currentColor"></rect>
+          <text x="530" y="783" text-anchor="middle" class="label-strong" font-weight="600">Notify</text>
+          <text x="530" y="804" text-anchor="middle" font-size="11">Slack / Teams — executed actions only</text>
+        </g>
+      </svg>
+      <figcaption>
+        Every request crosses the same three gates before anything touches
+        infrastructure. Rejections are logged, not silently dropped — the
+        dashed line into <em>Audit chain</em> is why a flapping alert is
+        legible the next morning instead of invisible.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="guardrails">
+  <div class="wrap wide">
+    <div class="section-head">
+      <h2 class="section-title">The guardrails, briefly</h2>
+      <span class="section-kicker">Why on-call can trust it</span>
+    </div>
+    <div class="guard-grid">
+      <div class="guard-item">
+        <h3>Rate limiting</h3>
+        <p>Caps how often one caller — or one specific action, across every
+        caller — can hit <code>/webhook</code> per minute. An alert storm
+        throttles instead of hammering the fleet.</p>
+      </div>
+      <div class="guard-item">
+        <h3>Cooldowns</h3>
+        <p>A per-action, optionally per-target timer. A real bug that keeps
+        tripping the same alert gets one remediation attempt, then silence —
+        not an escalating restart loop.</p>
+      </div>
+      <div class="guard-item">
+        <h3>RBAC + per-key scoping</h3>
+        <p>Roles gate who can override a controller, approve a request, or
+        trigger anything at all. A single API key — say, the one Alertmanager
+        uses — can be scoped to only the specific actions and controllers it
+        should ever call.</p>
+      </div>
+      <div class="guard-item">
+        <h3>Approval workflow</h3>
+        <p>Any action can require a second, different set of human eyes
+        before it runs — never the requester's own. Draining a node waits for
+        a tap; cleaning a disk doesn't have to.</p>
+      </div>
+      <div class="guard-item">
+        <h3>Dry-run</h3>
+        <p>Every action can be simulated end-to-end — controller resolved,
+        parameters templated, nothing executed. How a new automation gets
+        trusted before it's ever allowed to touch anything live.</p>
+      </div>
+      <div class="guard-item">
+        <h3>Tamper-evident audit trail</h3>
+        <p>Every attempt — resolved, blocked, or escalated — is written to a
+        hash-chained log. Editing or deleting an entry after the fact breaks
+        the chain in a way a verify check catches.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="wiring">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">Wiring it to Grafana</h2>
+      <span class="section-kicker">What the platform engineer actually built</span>
+    </div>
+    <p>
+      Alertmanager's webhook receiver posts its own fixed envelope — alert
+      labels and annotations, not an arbitrary JSON body. So the honest
+      version of this story has one small piece the diagram above doesn't
+      show: a thin relay (a few dozen lines, wherever the team already runs
+      webhook glue) that reads an alert's labels and calls Auto-Healer with
+      the shape it actually expects.
+    </p>
+    <div class="flow-label">alert labels → relay → Auto-Healer</div>
+    <div class="payload"><code>{"{"} <span class="k">"alertname"</span>: <span class="v">"DiskAlmostFull"</span>, <span class="k">"instance"</span>: <span class="v">"log-shipper-04"</span> {"}"}
+  <span style="opacity:.6">↓ relay maps alert → action</span>
+POST /webhook
+{ <span class="k">"event_type"</span>: <span class="v">"cleanup_disk"</span>,
+  <span class="k">"controller_override"</span>: <span class="v">"log-shipper-04"</span>,
+  <span class="k">"parameters"</span>: { <span class="k">"path"</span>: <span class="v">"/var/log"</span> } }</code></div>
+    <p style="margin-top:18px">
+      Everything past that POST — the guardrails, the dispatch, the audit
+      entry — is Auto-Healer's job, not the relay's. The relay only needs to
+      know one thing: which alert means which action.
+    </p>
+  </div>
+</section>
+
+<section id="morning">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 class="section-title">06:15 — handoff</h2>
+      <span class="section-kicker">What the next shift sees</span>
+    </div>
+    <div class="verify-block">
+      <div>
+        <p>
+          The morning platform engineer doesn't ask the on-call engineer what
+          happened overnight — they read it. <code>GET /audit</code> shows
+          four real attempts and one rejected one, each with who triggered
+          it, what ran, and what came back. Before touching any of it, they
+          check the chain itself hasn't been:
+        </p>
+        <div class="payload"><code>GET /audit/verify
+
+{"{"} <span class="k">"ok"</span>: <span class="v">true</span>,
+  <span class="k">"entries_checked"</span>: <span class="v">14</span>,
+  <span class="k">"first_broken_line"</span>: <span class="v">null</span> {"}"}</code></div>
+      </div>
+      <div>
+        <p>
+          The <code>web-02</code> flap becomes a ticket, not a war story — the
+          rate-limit block already did the work of noticing. The node drain
+          shows exactly who approved it and when. Nobody has to reconstruct
+          any of this from memory, and the on-call engineer — who is, notably,
+          still asleep — doesn't have to be asked.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="closing">
+  <div class="wrap">
+    <p class="big">The phone on the nightstand never lit up.</p>
+    <p class="small">That's the whole pitch — not that nothing goes wrong at
+    night, but that most of what goes wrong doesn't need a person awake for it.</p>
+  </div>
+</div>
+
+<footer class="credit">Auto-Healer — an illustrative on-call scenario</footer>
+
+<script>
+  (function () {
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var entries = document.querySelectorAll(".entry");
+    if (reduce || !("IntersectionObserver" in window)) {
+      entries.forEach(function (el) { el.classList.add("in-view"); });
+      return;
+    }
+    var io = new IntersectionObserver(
+      function (items) {
+        items.forEach(function (item) {
+          if (item.isIntersecting) {
+            item.target.classList.add("in-view");
+            io.unobserve(item.target);
+          }
+        });
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -40px 0px" }
+    );
+    entries.forEach(function (el) { io.observe(el); });
+  })();
+</script>
