@@ -288,10 +288,45 @@ the whole chain on demand and reports the first broken line, if any:
 ```
 `legacy_entries` counts pre-chain entries (from before this feature, or
 after upgrading) that exist but can't be verified. `segment_boundaries`
-records line numbers where the chain legitimately restarted at
-`sequence=1` (e.g. after external log rotation truncated the file) -
-that's a normal, explained discontinuity, not tampering, and doesn't
-affect `ok`.
+records line numbers where an already-verified chain segment is
+immediately followed by another one restarting at `sequence=1` - the
+shape you get from concatenating rotated-out history (`audit.log.1` +
+`audit.log.2` + ...) back into one file for a compliance review. That's
+a normal, explained discontinuity, not tampering, and doesn't affect
+`ok`. A brand new chain's own first entry looks the same
+(`sequence=1`, no predecessor) but isn't reported here, since there's no
+actual prior segment it broke away from.
+
+#### Log Rotation & Retention
+`config/audit.yaml`'s `retention` section (opt-in, disabled by default -
+`logs/audit.log` grows unbounded until this is turned on) rotates the
+active file and deletes old rotated copies on a schedule:
+```yaml
+retention:
+  enabled: true
+  max_bytes: 52428800      # rotate when audit.log reaches this size
+  rotate_interval_days: 30 # also rotate at least this often
+  retention_days: 365      # delete rotated files older than this
+```
+Either trigger alone is enough to rotate (0/omit disables that one);
+`retention_days: 0` (or omitted) keeps every rotated file forever -
+rotate, but never delete. A rotated file is renamed to
+`logs/audit.log.<UTC timestamp>`, never truncated or edited, so it's
+independently readable and verifiable on its own
+(`src.audit.verify_chain("logs/audit.log.20260101T000000Z")` from a
+Python shell, or reassemble several into one file and run `GET
+/audit/verify` against the reassembled copy to see the `segment_boundaries`
+described above). `GET /audit/verify` itself only ever checks the
+currently-active file.
+
+Every rotation writes itself as the first entry of the new segment
+(`"action": "audit_log_rotation"`, with `rotated_from` and
+`deleted_archives`) - deleting audit history is something an auditor
+should be able to see happened, not a silent gap. That entry is recorded
+locally in the chain but, unlike normal action entries, is **not**
+currently sent through the external shipping sinks below - if you rely
+on those as your durable off-box copy, be aware a rotation/retention
+event itself won't appear there yet.
 
 #### Shipping to an external log platform (Elasticsearch, Splunk, etc.)
 `config/audit.yaml` (all opt-in, disabled by default) mirrors every

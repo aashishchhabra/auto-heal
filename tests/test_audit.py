@@ -3,11 +3,13 @@ Tests for src/audit.py: the hash-chained AuditChain writer, verify_chain,
 the ECS mapping, and AuditShipper's syslog/http sinks.
 """
 
+import datetime
 import json
 import os
 
 import pytest
 import requests
+import yaml
 
 from src.audit import (
     AuditChain,
@@ -112,6 +114,187 @@ def test_chain_starts_new_segment_on_legacy_unchained_tail(audit_path):
     finalized = chain.append({"action": "new_entry"})
     assert finalized["sequence"] == 1
     assert finalized["prev_hash"] == GENESIS_HASH
+
+
+# --- AuditChain rotation & retention --------------------------------------
+
+
+def make_retention_config(tmp_path, **retention):
+    config_path = tmp_path / "audit_config.yaml"
+    cfg = {"enabled": True, **retention}
+    config_path.write_text(yaml.dump({"retention": cfg}))
+    return str(config_path)
+
+
+def archives_for(audit_path):
+    directory = os.path.dirname(audit_path) or "."
+    base = os.path.basename(audit_path)
+    return sorted(
+        f for f in os.listdir(directory) if f != base and f.startswith(base + ".")
+    )
+
+
+def test_rotation_never_happens_without_config_path(audit_path):
+    chain = AuditChain(audit_path)  # no config_path at all
+    for _ in range(20):
+        chain.append({"action": "a" * 200})
+    assert archives_for(audit_path) == []
+
+
+def test_rotation_disabled_is_the_default(audit_path, tmp_path):
+    config_path = tmp_path / "audit_config.yaml"
+    config_path.write_text(yaml.dump({"retention": {"max_bytes": 10}}))  # no "enabled"
+    chain = AuditChain(audit_path, str(config_path))
+    for _ in range(20):
+        chain.append({"action": "a" * 200})
+    assert archives_for(audit_path) == []
+
+
+def test_size_based_rotation_triggers(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=200)
+    chain = AuditChain(audit_path, config_path)
+    for i in range(20):
+        chain.append({"action": f"action-{i}"})
+    assert len(archives_for(audit_path)) >= 1
+    # The live file always exists and is itself a valid, if short, chain.
+    assert verify_chain(audit_path)["ok"] is True
+
+
+def test_rotation_writes_marker_as_first_entry_of_new_segment(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=10)  # rotate every append
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a"})
+    chain.append({"action": "b"})
+
+    lines = read_lines(audit_path)
+    assert lines[0]["action"] == "audit_log_rotation"
+    assert lines[0]["sequence"] == 1
+    assert lines[0]["prev_hash"] == GENESIS_HASH
+    assert "rotated_from" in lines[0]
+
+
+def test_rotated_file_is_independently_verifiable(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=10)
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a"})
+    chain.append({"action": "b"})
+
+    archives = archives_for(audit_path)
+    assert len(archives) >= 1
+    archived_full_path = os.path.join(os.path.dirname(audit_path), archives[0])
+    result = verify_chain(archived_full_path)
+    assert result["ok"] is True
+    assert result["entries_checked"] >= 1
+
+
+def test_time_based_rotation_triggers_on_old_first_entry(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, rotate_interval_days=1)
+    old_timestamp = (
+        (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=2))
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    with open(audit_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "action": "old",
+                    "timestamp": old_timestamp,
+                    "sequence": 1,
+                    "prev_hash": GENESIS_HASH,
+                    "entry_hash": "x" * 64,
+                }
+            )
+            + "\n"
+        )
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "new", "timestamp": old_timestamp})
+    assert len(archives_for(audit_path)) == 1
+
+
+def test_time_based_rotation_does_not_trigger_on_recent_first_entry(
+    audit_path, tmp_path
+):
+    config_path = make_retention_config(tmp_path, rotate_interval_days=1)
+    now = datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a", "timestamp": now})
+    chain.append({"action": "b", "timestamp": now})
+    assert archives_for(audit_path) == []
+
+
+def test_retention_days_deletes_expired_archives(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=10, retention_days=1)
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a"})  # just creates the file, nothing to rotate yet
+    chain.append({"action": "b"})  # now audit.log exceeds max_bytes -> rotates
+
+    old_archive = os.path.join(os.path.dirname(audit_path), archives_for(audit_path)[0])
+    old_time = (
+        datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=5)
+    ).timestamp()
+    os.utime(old_archive, (old_time, old_time))
+
+    chain.append({"action": "c"})  # forces another rotation -> sweep runs
+
+    remaining = archives_for(audit_path)
+    assert os.path.basename(old_archive) not in remaining
+
+
+def test_retention_days_keeps_recent_archives(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=10, retention_days=30)
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a"})
+    chain.append({"action": "b"})  # rotates
+    first_archive = archives_for(audit_path)[0]
+
+    chain.append({"action": "c"})  # another rotation+sweep, but nothing is expired yet
+
+    assert first_archive in archives_for(audit_path)
+
+
+def test_retention_days_unset_keeps_archives_forever(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=10)  # no retention_days
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a"})
+    chain.append({"action": "b"})  # rotates
+    old_archive = os.path.join(os.path.dirname(audit_path), archives_for(audit_path)[0])
+    ancient = (
+        datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=9999)
+    ).timestamp()
+    os.utime(old_archive, (ancient, ancient))
+
+    chain.append({"action": "c"})
+
+    assert os.path.basename(old_archive) in archives_for(audit_path)
+
+
+def test_rotation_marker_lists_deleted_archives(audit_path, tmp_path):
+    config_path = make_retention_config(tmp_path, max_bytes=10, retention_days=1)
+    chain = AuditChain(audit_path, config_path)
+    chain.append({"action": "a"})
+    chain.append({"action": "b"})  # rotates
+    old_archive = archives_for(audit_path)[0]
+    old_full_path = os.path.join(os.path.dirname(audit_path), old_archive)
+    old_time = (
+        datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=5)
+    ).timestamp()
+    os.utime(old_full_path, (old_time, old_time))
+
+    chain.append({"action": "c"})  # another rotation -> sweep deletes old_archive
+
+    marker = read_lines(audit_path)[0]
+    assert marker["action"] == "audit_log_rotation"
+    assert marker["deleted_archives"] == [old_archive]
+
+
+def test_malformed_retention_config_disables_rotation(audit_path, tmp_path):
+    config_path = tmp_path / "audit_config.yaml"
+    config_path.write_text("not: valid: yaml: [")
+    chain = AuditChain(audit_path, str(config_path))
+    for _ in range(20):
+        chain.append({"action": "a" * 200})
+    assert archives_for(audit_path) == []
 
 
 # --- verify_chain -------------------------------------------------------
