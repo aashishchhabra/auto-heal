@@ -471,7 +471,11 @@ async def get_audit(
 
 
 @app.get("/approvals")
-def list_approvals():
+def list_approvals(request: Request):
+    api_key = request.headers.get("x-api-key")
+    role = get_role_from_api_key(api_key)
+    if not has_permission(role, "approvals_read"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
     with approval_lock:
         return [
             {k: v for k, v in entry.items() if k != "result"}
@@ -480,13 +484,25 @@ def list_approvals():
 
 
 @app.post("/approvals/{approval_id}/approve")
-def approve_approval(approval_id: str):
+def approve_approval(approval_id: str, request: Request):
+    api_key = request.headers.get("x-api-key")
+    approver_role = get_role_from_api_key(api_key)
+    if not has_permission(approver_role, "approve_actions"):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Approving actions is not permitted for your role"},
+        )
     entry = get_approval_entry(approval_id)
     if not entry:
         return JSONResponse(status_code=404, content={"detail": "Approval not found"})
     if entry["status"] != "pending":
         return JSONResponse(
             status_code=400, content={"detail": f"Already {entry['status']}"}
+        )
+    if entry["requested_by"] == api_key:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "You cannot approve your own request"},
         )
     # Execute the action now
     payload = WebhookPayload(**entry["payload"])
@@ -511,6 +527,8 @@ def approve_approval(approval_id: str):
         )
     entry["status"] = "approved"
     entry["result"] = exec_result.as_dict()
+    entry["approved_by"] = api_key
+    entry["approver_role"] = approver_role
     # Write audit log
     audit_entry = {
         "user": entry["requested_by"],
@@ -524,13 +542,22 @@ def approve_approval(approval_id: str):
         "dry_run": dry_run,
         "approval_id": approval_id,
         "approval_status": "approved",
+        "approved_by": api_key,
+        "approver_role": approver_role,
     }
     write_audit_log(audit_entry)
     return {"status": "approved", "result": exec_result.as_dict()}
 
 
 @app.post("/approvals/{approval_id}/reject")
-def reject_approval(approval_id: str):
+def reject_approval(approval_id: str, request: Request):
+    api_key = request.headers.get("x-api-key")
+    approver_role = get_role_from_api_key(api_key)
+    if not has_permission(approver_role, "approve_actions"):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Rejecting actions is not permitted for your role"},
+        )
     entry = get_approval_entry(approval_id)
     if not entry:
         return JSONResponse(status_code=404, content={"detail": "Approval not found"})
@@ -538,8 +565,15 @@ def reject_approval(approval_id: str):
         return JSONResponse(
             status_code=400, content={"detail": f"Already {entry['status']}"}
         )
+    if entry["requested_by"] == api_key:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "You cannot reject your own request"},
+        )
     entry["status"] = "rejected"
     entry["result"] = {"error": "Rejected by approver"}
+    entry["approved_by"] = api_key
+    entry["approver_role"] = approver_role
     # Write audit log
     audit_entry = {
         "user": entry["requested_by"],
@@ -553,6 +587,8 @@ def reject_approval(approval_id: str):
         "dry_run": entry["payload"].get("dry_run", False),
         "approval_id": approval_id,
         "approval_status": "rejected",
+        "approved_by": api_key,
+        "approver_role": approver_role,
     }
     write_audit_log(audit_entry)
     return {"status": "rejected"}

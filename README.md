@@ -59,6 +59,11 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 - `POST /approvals/{approval_id}/approve` — Approve and execute a pending action
 - `POST /approvals/{approval_id}/reject` — Reject a pending action
 
+Approving/rejecting requires the `approve_actions` permission (see
+`config/auth.yaml`; `readonly` does not have it by default), and a
+requester can never approve or reject their own pending request, even
+with a role that otherwise has `approve_actions`.
+
 ## Usage Examples
 
 ### Dry-Run

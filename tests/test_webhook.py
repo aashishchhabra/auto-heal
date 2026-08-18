@@ -349,16 +349,21 @@ def test_approval_list_and_approve(monkeypatch):
     approvals = resp2.json()
     found = [a for a in approvals if a["id"] == approval_id]
     assert found and found[0]["status"] == "pending"
-    # Approve
-    resp3 = client.post(f"/approvals/{approval_id}/approve", headers=get_headers())
+    # Approve as a different identity than the requester (admin-key
+    # requested it; self-approval is blocked, see
+    # test_approval_self_approve_forbidden below).
+    resp3 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("operator-key")
+    )
     assert resp3.status_code == 200
     data = resp3.json()
     assert data["status"] == "approved"
     assert data["result"]["success"] is True
-    # Approvals list should now show status approved
+    # Approvals list should now show status approved, with who approved it
     resp4 = client.get("/approvals", headers=get_headers())
     found2 = [a for a in resp4.json() if a["id"] == approval_id]
     assert found2 and found2[0]["status"] == "approved"
+    assert found2[0]["approved_by"] == "operator-key"
 
 
 def test_approval_reject(monkeypatch):
@@ -371,8 +376,10 @@ def test_approval_reject(monkeypatch):
     }
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
-    # Reject
-    resp2 = client.post(f"/approvals/{approval_id}/reject", headers=get_headers())
+    # Reject as a different identity than the requester
+    resp2 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("operator-key")
+    )
     assert resp2.status_code == 200
     data = resp2.json()
     assert data["status"] == "rejected"
@@ -380,6 +387,50 @@ def test_approval_reject(monkeypatch):
     resp3 = client.get("/approvals", headers=get_headers())
     found = [a for a in resp3.json() if a["id"] == approval_id]
     assert found and found[0]["status"] == "rejected"
+
+
+def test_approval_self_approve_forbidden(monkeypatch):
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "parameters": {"service_name": "nginx"},
+        "approval_required": True,
+    }
+    resp = client.post("/webhook", json=payload, headers=get_headers("admin-key"))
+    approval_id = resp.json()["approval_id"]
+    resp2 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("admin-key")
+    )
+    assert resp2.status_code == 403
+    assert "own request" in resp2.json()["detail"]
+    resp3 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("admin-key")
+    )
+    assert resp3.status_code == 403
+    assert "own request" in resp3.json()["detail"]
+
+
+def test_approval_readonly_cannot_approve_or_reject():
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "parameters": {"service_name": "nginx"},
+        "approval_required": True,
+    }
+    resp = client.post("/webhook", json=payload, headers=get_headers("admin-key"))
+    approval_id = resp.json()["approval_id"]
+    resp2 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("readonly-key")
+    )
+    assert resp2.status_code == 403
+    resp3 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("readonly-key")
+    )
+    assert resp3.status_code == 403
+    # Still pending - neither the forbidden approve nor reject took effect
+    resp4 = client.get("/approvals", headers=get_headers("admin-key"))
+    found = [a for a in resp4.json() if a["id"] == approval_id]
+    assert found and found[0]["status"] == "pending"
 
 
 def test_approval_not_found():
@@ -416,12 +467,18 @@ def test_approval_already_processed(monkeypatch):
     }
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
-    # Approve
-    resp2 = client.post(f"/approvals/{approval_id}/approve", headers=get_headers())
+    # Approve (as a different identity than the requester)
+    resp2 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("operator-key")
+    )
     assert resp2.status_code == 200
-    # Approve again (should fail)
-    resp3 = client.post(f"/approvals/{approval_id}/approve", headers=get_headers())
+    # Approve again (should fail - already processed, not a permission issue)
+    resp3 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("operator-key")
+    )
     assert resp3.status_code == 400
-    # Reject after approve (should fail)
-    resp4 = client.post(f"/approvals/{approval_id}/reject", headers=get_headers())
+    # Reject after approve (should fail - already processed)
+    resp4 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("operator-key")
+    )
     assert resp4.status_code == 400
