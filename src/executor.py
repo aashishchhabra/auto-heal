@@ -11,7 +11,7 @@ import kubernetes
 import kubernetes.config
 from kubernetes.client.exceptions import ApiException
 
-from src.vault import vault_client, VaultUnavailableError
+from src.vault import resolve_vault_ref, VaultUnavailableError
 
 logger = logging.getLogger("autoheal.executor")
 
@@ -212,18 +212,11 @@ class ActionExecutor:
         """
         if not value or not value.startswith("vault:"):
             return value, None
-        ref = value.removeprefix("vault:")
-        path, _, field = ref.partition("#")
-        field = field or default_field
-        secret = vault_client.get_secret(path)
-        if field not in secret:
-            raise VaultUnavailableError(
-                f"Vault secret at '{path}' has no field '{field}'"
-            )
+        secret_value = resolve_vault_ref(value, default_field)
         fd, tmp_path = tempfile.mkstemp(prefix="autoheal-secret-")
         try:
             with os.fdopen(fd, "w") as f:
-                f.write(secret[field])
+                f.write(secret_value)
             os.chmod(tmp_path, 0o600)
         except Exception:
             os.unlink(tmp_path)

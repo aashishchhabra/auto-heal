@@ -14,7 +14,7 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 - Dry-run support for all actions
 - Automated CI/CD with badge automation and onboarding validation
 - Webhook API for triggering healing actions
-- Structured logging and audit trail
+- Structured, hash-chained (tamper-evident) audit trail, with optional shipping to syslog/Elasticsearch/any HTTP log platform
 - Slack/Teams notifications on action execution
 - Role-based access control, plus optional per-API-key scoping to a specific set of actions/controllers
 - Optional HashiCorp Vault-backed secrets (API keys, controller SSH/kube credentials), with static-token or in-cluster Kubernetes Vault auth
@@ -58,6 +58,7 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 - `POST /webhook` — Trigger a healing action (supports `dry_run` and `approval_required`)
 - `GET /health` — Health check
 - `GET /audit` — Retrieve audit log (secured)
+- `GET /audit/verify` — Check the audit log's hash chain for tampering (secured)
 - `GET /approvals` — List pending/processed approvals
 - `POST /approvals/{approval_id}/approve` — Approve and execute a pending action
 - `POST /approvals/{approval_id}/reject` — Reject a pending action

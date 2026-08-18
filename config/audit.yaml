@@ -1,0 +1,49 @@
+# Optional shipping of the audit trail to an external log platform.
+#
+# logs/audit.log (hash-chained, see src/audit.py::AuditChain) is always
+# written and is the durable, authoritative record - everything below is
+# an OPT-IN, best-effort MIRROR of it. Both sinks are disabled by
+# default; a deployment that never touches this file behaves exactly as
+# before this feature existed. A shipping failure (network error, bad
+# credentials, downed collector) is logged and never blocks action
+# execution or the local write - see AuditShipper's docstring.
+#
+# Each shipped entry is mapped to Elastic Common Schema (ECS) -
+# https://www.elastic.co/guide/en/ecs/current/index.html - so it's
+# immediately usable in Elasticsearch/Kibana (or any other ECS-aware
+# consumer) without a bespoke index mapping, regardless of which sink
+# delivers it.
+shipping:
+  # RFC 3164 BSD syslog over UDP or TCP (Python's stdlib
+  # logging.handlers.SysLogHandler) - the lowest-common-denominator
+  # protocol nearly every log collector/SIEM can ingest directly:
+  # rsyslog, Logstash's syslog input (-> Elasticsearch), Graylog,
+  # Splunk, a Fluentd/Fluent Bit syslog listener. TLS is NOT supported
+  # by the stdlib handler; for encryption in transit, point this at a
+  # local relay (rsyslog/promtail) that forwards onward, or use the
+  # http sink below instead (plain HTTPS).
+  syslog:
+    enabled: false
+    host: "localhost"
+    port: 514
+    protocol: "udp"      # udp | tcp
+    facility: "local0"   # any name in logging.handlers.SysLogHandler.facility_names
+
+  # A single JSON POST/PUT per audit entry to any HTTP endpoint - the
+  # most direct path to Elasticsearch itself (point `url` at
+  # `https://<es-host>:9200/<index>/_doc`), but equally usable for a
+  # Logstash/Fluent Bit HTTP input, Splunk HEC, Datadog's log intake, or
+  # a custom webhook.
+  http:
+    enabled: false
+    url: "https://elasticsearch.example.com:9200/auto-healer-audit/_doc"
+    method: "POST"
+    timeout_seconds: 5
+    headers: {}
+      # Header values accept the same "vault:<path>#<field>" syntax used
+      # everywhere else in this codebase, so a bearer token/API key
+      # never has to live in plaintext here:
+      # Authorization: "vault:secret/data/auto-healer/audit-shipping#authorization"
+      # A literal value also works directly, e.g. for an Elasticsearch
+      # API key (https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-create-api-key.html):
+      # Authorization: "ApiKey <base64-encoded id:api_key>"

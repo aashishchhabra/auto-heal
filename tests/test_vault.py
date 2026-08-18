@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from src.vault import VaultClient, VaultUnavailableError
+import src.vault as vault
+from src.vault import VaultClient, VaultUnavailableError, resolve_vault_ref
 
 
 def make_client(**overrides):
@@ -308,3 +309,58 @@ def test_kubernetes_auth_invalidate_path_does_not_force_relogin(tmp_path):
         client.invalidate("secret/data/x")
         client._resolve_token()
     assert mock_post.call_count == 1
+
+
+# --- resolve_vault_ref ---------------------------------------------------
+
+
+def test_resolve_vault_ref_plain_string_passthrough():
+    assert resolve_vault_ref("plain-value") == "plain-value"
+    assert resolve_vault_ref(None) is None
+
+
+def test_resolve_vault_ref_fetches_default_field(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.get_secret.return_value = {"authorization": "Bearer xyz"}
+    monkeypatch.setattr(vault, "vault_client", fake_client)
+
+    result = resolve_vault_ref("vault:secret/data/x", default_field="authorization")
+
+    assert result == "Bearer xyz"
+    fake_client.get_secret.assert_called_once_with("secret/data/x")
+
+
+def test_resolve_vault_ref_explicit_field_overrides_default(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.get_secret.return_value = {"token": "t", "other": "o"}
+    monkeypatch.setattr(vault, "vault_client", fake_client)
+
+    result = resolve_vault_ref("vault:secret/data/x#other", default_field="token")
+
+    assert result == "o"
+
+
+def test_resolve_vault_ref_no_field_and_no_default_raises(monkeypatch):
+    fake_client = MagicMock()
+    monkeypatch.setattr(vault, "vault_client", fake_client)
+
+    with pytest.raises(VaultUnavailableError, match="no field"):
+        resolve_vault_ref("vault:secret/data/x")
+
+
+def test_resolve_vault_ref_missing_field_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.get_secret.return_value = {"other": "o"}
+    monkeypatch.setattr(vault, "vault_client", fake_client)
+
+    with pytest.raises(VaultUnavailableError, match="no field 'token'"):
+        resolve_vault_ref("vault:secret/data/x", default_field="token")
+
+
+def test_resolve_vault_ref_vault_unreachable_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.get_secret.side_effect = VaultUnavailableError("unreachable")
+    monkeypatch.setattr(vault, "vault_client", fake_client)
+
+    with pytest.raises(VaultUnavailableError):
+        resolve_vault_ref("vault:secret/data/x", default_field="token")
