@@ -57,6 +57,10 @@ cover/
 
 # Django stuff:
 *.log
+
+# Auto-Healer persisted runtime state (regenerated on every write)
+logs/approvals.json
+logs/approvals.json.tmp
 local_settings.py
 db.sqlite3
 db.sqlite3-journal

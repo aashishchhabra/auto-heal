@@ -83,6 +83,77 @@ def test_webhook_unknown_action():
     assert response.json()["detail"] == "Unknown action/event_type"
 
 
+def test_webhook_remote_controller_uses_run_remote(monkeypatch):
+    # dc1-ansible is a real remote host in config/controllers.yaml (not
+    # localhost), so it must be dispatched through run_remote over SSH -
+    # not run locally via run_playbook.
+    calls = {}
+
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    def fake_run_remote(controller, action, params, dry_run=False):
+        calls["controller"] = controller
+        calls["action"] = action
+        calls["params"] = params
+        return DummyResult()
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError(
+            "run_playbook should not be called for a remote controller"
+        )
+
+    monkeypatch.setattr("src.main.executor.run_remote", fake_run_remote)
+    monkeypatch.setattr("src.main.executor.run_playbook", fail_if_called)
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "controller_override": "dc1-ansible",
+        "parameters": {"service_name": "nginx"},
+    }
+    response = client.post("/webhook", json=payload, headers=get_headers())
+    assert response.status_code == 200
+    assert response.json()["controller"] == "dc1-ansible"
+    assert calls["controller"]["host"] == "ansible.dc1.example.com"
+    assert calls["params"]["service_name"] == "nginx"
+
+
+def test_webhook_local_controller_does_not_use_run_remote(monkeypatch):
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError("run_remote should not be called for a local controller")
+
+    monkeypatch.setattr("src.main.executor.run_remote", fail_if_called)
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
+    response = client.post("/webhook", json=payload, headers=get_headers())
+    assert response.status_code == 200
+    assert response.json()["controller"] == "ansible_local"
+
+
 def test_webhook_unknown_controller():
     client = TestClient(app)
     payload = {
@@ -273,21 +344,26 @@ def test_approval_list_and_approve(monkeypatch):
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
     # List approvals
-    resp2 = client.get("/approvals")
+    resp2 = client.get("/approvals", headers=get_headers())
     assert resp2.status_code == 200
     approvals = resp2.json()
     found = [a for a in approvals if a["id"] == approval_id]
     assert found and found[0]["status"] == "pending"
-    # Approve
-    resp3 = client.post(f"/approvals/{approval_id}/approve")
+    # Approve as a different identity than the requester (admin-key
+    # requested it; self-approval is blocked, see
+    # test_approval_self_approve_forbidden below).
+    resp3 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("operator-key")
+    )
     assert resp3.status_code == 200
     data = resp3.json()
     assert data["status"] == "approved"
     assert data["result"]["success"] is True
-    # Approvals list should now show status approved
-    resp4 = client.get("/approvals")
+    # Approvals list should now show status approved, with who approved it
+    resp4 = client.get("/approvals", headers=get_headers())
     found2 = [a for a in resp4.json() if a["id"] == approval_id]
     assert found2 and found2[0]["status"] == "approved"
+    assert found2[0]["approved_by"] == "operator-key"
 
 
 def test_approval_reject(monkeypatch):
@@ -300,22 +376,68 @@ def test_approval_reject(monkeypatch):
     }
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
-    # Reject
-    resp2 = client.post(f"/approvals/{approval_id}/reject")
+    # Reject as a different identity than the requester
+    resp2 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("operator-key")
+    )
     assert resp2.status_code == 200
     data = resp2.json()
     assert data["status"] == "rejected"
     # Approvals list should now show status rejected
-    resp3 = client.get("/approvals")
+    resp3 = client.get("/approvals", headers=get_headers())
     found = [a for a in resp3.json() if a["id"] == approval_id]
     assert found and found[0]["status"] == "rejected"
 
 
+def test_approval_self_approve_forbidden(monkeypatch):
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "parameters": {"service_name": "nginx"},
+        "approval_required": True,
+    }
+    resp = client.post("/webhook", json=payload, headers=get_headers("admin-key"))
+    approval_id = resp.json()["approval_id"]
+    resp2 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("admin-key")
+    )
+    assert resp2.status_code == 403
+    assert "own request" in resp2.json()["detail"]
+    resp3 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("admin-key")
+    )
+    assert resp3.status_code == 403
+    assert "own request" in resp3.json()["detail"]
+
+
+def test_approval_readonly_cannot_approve_or_reject():
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "parameters": {"service_name": "nginx"},
+        "approval_required": True,
+    }
+    resp = client.post("/webhook", json=payload, headers=get_headers("admin-key"))
+    approval_id = resp.json()["approval_id"]
+    resp2 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("readonly-key")
+    )
+    assert resp2.status_code == 403
+    resp3 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("readonly-key")
+    )
+    assert resp3.status_code == 403
+    # Still pending - neither the forbidden approve nor reject took effect
+    resp4 = client.get("/approvals", headers=get_headers("admin-key"))
+    found = [a for a in resp4.json() if a["id"] == approval_id]
+    assert found and found[0]["status"] == "pending"
+
+
 def test_approval_not_found():
     client = TestClient(app)
-    resp = client.post("/approvals/notarealid/approve")
+    resp = client.post("/approvals/notarealid/approve", headers=get_headers())
     assert resp.status_code == 404
-    resp2 = client.post("/approvals/notarealid/reject")
+    resp2 = client.post("/approvals/notarealid/reject", headers=get_headers())
     assert resp2.status_code == 404
 
 
@@ -345,12 +467,18 @@ def test_approval_already_processed(monkeypatch):
     }
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
-    # Approve
-    resp2 = client.post(f"/approvals/{approval_id}/approve")
+    # Approve (as a different identity than the requester)
+    resp2 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("operator-key")
+    )
     assert resp2.status_code == 200
-    # Approve again (should fail)
-    resp3 = client.post(f"/approvals/{approval_id}/approve")
+    # Approve again (should fail - already processed, not a permission issue)
+    resp3 = client.post(
+        f"/approvals/{approval_id}/approve", headers=get_headers("operator-key")
+    )
     assert resp3.status_code == 400
-    # Reject after approve (should fail)
-    resp4 = client.post(f"/approvals/{approval_id}/reject")
+    # Reject after approve (should fail - already processed)
+    resp4 = client.post(
+        f"/approvals/{approval_id}/reject", headers=get_headers("operator-key")
+    )
     assert resp4.status_code == 400

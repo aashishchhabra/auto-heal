@@ -56,8 +56,6 @@ file_handler = logging.handlers.RotatingFileHandler(
 file_handler.setFormatter(JsonFormatter())
 logger.addHandler(file_handler)
 
-app = FastAPI()
-app.add_middleware(APIKeyAuthMiddleware)
 executor = ActionExecutor()
 
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
@@ -94,22 +92,20 @@ async def lifespan(app: FastAPI):
 
     actions_path = os.path.join(os.path.dirname(__file__), "../config/actions.yaml")
     with open(actions_path) as f:
-        config_actions = yaml.safe_load(f)
-    # Merge, giving priority to config/actions.yaml
-    merged = {**discovered, **config_actions}
-
-    # Patch get_action_config to use merged actions
-    def get_action_config_patched(event_type):
-        return merged.get(event_type)
+        config_actions = yaml.safe_load(f) or {}
+    # Merge, giving priority to the explicit entries in config/actions.yaml
+    merged = {**discovered, **config_actions.get("actions", {})}
 
     import src.actions
 
-    src.actions.get_action_config = get_action_config_patched
+    src.actions.set_merged_actions(merged)
+    _load_approval_queue()
     yield
     # Place any shutdown logic here
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(APIKeyAuthMiddleware)
 
 
 @app.get("/health")
@@ -164,25 +160,142 @@ class WebhookPayload(BaseModel):
     )
 
 
-# In-memory approval queue (thread-safe)
+# Approval queue. Kept in memory for fast reads, but persisted to disk on
+# every mutation so pending (and recent) approvals survive a process
+# restart or pod reschedule instead of silently vanishing.
 approval_queue = []
 approval_lock = Lock()
+
+APPROVALS_STATE_PATH = os.path.join(os.path.dirname(__file__), "../logs/approvals.json")
+# Approved/rejected entries beyond this count are dropped on save - their
+# permanent record already lives in the audit log, so the queue only needs
+# to keep recent history bounded rather than growing forever. Pending
+# entries are never dropped.
+MAX_PROCESSED_APPROVALS = 500
 
 # Approval entry structure:
 # {
 #   "id": <unique>,
 #   "payload": <WebhookPayload dict>,
 #   "status": "pending"|"approved"|"rejected",
-#   "result": None|dict
+#   "result": None|dict,
+#   "requested_by": <api key>,
+#   "role": <requester role>,
+#   "controller": <controller name>,
+#   "approved_by": <api key>,      # set once processed
+#   "approver_role": <role>,       # set once processed
 # }
 import uuid
 
 
+def _load_approval_queue():
+    """Populate approval_queue from disk at startup, if a prior run left one."""
+    if not os.path.exists(APPROVALS_STATE_PATH):
+        return
+    try:
+        with open(APPROVALS_STATE_PATH) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.error(f"Failed to load persisted approval queue, starting empty: {e}")
+        return
+    if isinstance(data, list):
+        with approval_lock:
+            approval_queue.extend(data)
+        logger.info(f"Loaded {len(data)} persisted approval(s) from disk")
+
+
+def _prune_approval_queue_locked():
+    """
+    Caller must hold approval_lock. Drops the oldest processed entries
+    beyond MAX_PROCESSED_APPROVALS, keeping every pending entry regardless
+    of count - it's still actionable work, not history.
+    """
+    processed_positions = [
+        i for i, e in enumerate(approval_queue) if e["status"] != "pending"
+    ]
+    excess = len(processed_positions) - MAX_PROCESSED_APPROVALS
+    if excess > 0:
+        drop = set(processed_positions[:excess])
+        approval_queue[:] = [e for i, e in enumerate(approval_queue) if i not in drop]
+
+
+def _save_approval_queue_locked():
+    """
+    Caller must hold approval_lock. Writes to a temp file and renames it
+    into place so a crash mid-write can't leave a truncated/corrupt state
+    file behind.
+    """
+    _prune_approval_queue_locked()
+    tmp_path = f"{APPROVALS_STATE_PATH}.tmp"
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(approval_queue, f)
+        os.replace(tmp_path, APPROVALS_STATE_PATH)
+    except OSError as e:
+        logger.error(f"Failed to persist approval queue: {e}")
+
+
+def _find_approval_entry_locked(entry_id):
+    """Caller must hold approval_lock."""
+    for entry in approval_queue:
+        if entry["id"] == entry_id:
+            return entry
+    return None
+
+
 def get_approval_entry(entry_id):
     with approval_lock:
-        for entry in approval_queue:
-            if entry["id"] == entry_id:
-                return entry
+        return _find_approval_entry_locked(entry_id)
+
+
+def is_local_controller(controller_config: dict) -> bool:
+    """
+    True for controllers Auto-Healer should run against directly on this
+    host (type: local, or an ansible controller whose host is this
+    machine). Everything else is reached over SSH via executor.run_remote.
+    """
+    if controller_config.get("type") == "local":
+        return True
+    return controller_config.get("host") in (None, "", "localhost", "127.0.0.1")
+
+
+def execute_action(
+    action_config: dict, controller_config: dict, params: dict, dry_run: bool
+):
+    """
+    Dispatch an action to the right ActionExecutor method based on the
+    controller it's targeting. Returns None if the action defines none of
+    playbook/script/command. Shared by /webhook and the approval-execution
+    path so the two can't drift.
+    """
+    controller_name = controller_config.get("host") or "local"
+    if not is_local_controller(controller_config):
+        logger.info(
+            f"Executing action remotely via controller '{controller_name}' "
+            f"with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_remote(
+            controller_config, action_config, params, dry_run=dry_run
+        )
+    if "playbook" in action_config:
+        logger.info(
+            f"Executing playbook '{action_config['playbook']}' locally "
+            f"with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_playbook(action_config["playbook"], params, dry_run=dry_run)
+    if "script" in action_config:
+        args = [str(v) for v in params.values()] if params else None
+        logger.info(
+            f"Executing script '{action_config['script']}' locally "
+            f"with args {args} (dry_run={dry_run})"
+        )
+        return executor.run_script(action_config["script"], args, dry_run=dry_run)
+    if "command" in action_config:
+        logger.info(
+            f"Executing command '{action_config['command']}' locally "
+            f"with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_command(action_config["command"], params, dry_run=dry_run)
     return None
 
 
@@ -239,6 +352,7 @@ async def webhook(request: Request):
         }
         with approval_lock:
             approval_queue.append(approval_entry)
+            _save_approval_queue_locked()
         logger.info(f"Action '{event_type}' queued for approval (id={entry_id})")
         return {
             "approval_id": entry_id,
@@ -246,27 +360,12 @@ async def webhook(request: Request):
             "detail": "Action requires approval before execution.",
         }
     # Dry-run support
-    exec_result = None
-    if "playbook" in action_config:
-        playbook_path = action_config["playbook"]
-        logger.info(
-            f"Executing playbook '{playbook_path}' on controller '{controller_name}' "
-            f"with params {params} (dry_run={dry_run})"
-        )
-        exec_result = executor.run_playbook(playbook_path, params, dry_run=dry_run)
-    elif "script" in action_config:
-        script_path = action_config["script"]
-        logger.info(
-            f"Executing script '{script_path}' on controller '{controller_name}' "
-            f"with params {params} (dry_run={dry_run})"
-        )
-        args = [str(v) for v in params.values()] if params else None
-        exec_result = executor.run_script(script_path, args, dry_run=dry_run)
-    else:
+    exec_result = execute_action(action_config, controller_config, params, dry_run)
+    if exec_result is None:
         logger.error(f"No executable defined for action '{event_type}'")
         return JSONResponse(
             status_code=400,
-            content={"detail": "No playbook or script defined for action"},
+            content={"detail": "No playbook, script, or command defined for action"},
         )
     logger.info(f"Execution result: {exec_result.as_dict()}")
     # Write audit log
@@ -440,7 +539,11 @@ async def get_audit(
 
 
 @app.get("/approvals")
-def list_approvals():
+def list_approvals(request: Request):
+    api_key = request.headers.get("x-api-key")
+    role = get_role_from_api_key(api_key)
+    if not has_permission(role, "approvals_read"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
     with approval_lock:
         return [
             {k: v for k, v in entry.items() if k != "result"}
@@ -449,15 +552,39 @@ def list_approvals():
 
 
 @app.post("/approvals/{approval_id}/approve")
-def approve_approval(approval_id: str):
-    entry = get_approval_entry(approval_id)
-    if not entry:
-        return JSONResponse(status_code=404, content={"detail": "Approval not found"})
-    if entry["status"] != "pending":
+def approve_approval(approval_id: str, request: Request):
+    api_key = request.headers.get("x-api-key")
+    approver_role = get_role_from_api_key(api_key)
+    if not has_permission(approver_role, "approve_actions"):
         return JSONResponse(
-            status_code=400, content={"detail": f"Already {entry['status']}"}
+            status_code=403,
+            content={"detail": "Approving actions is not permitted for your role"},
         )
-    # Execute the action now
+    with approval_lock:
+        entry = _find_approval_entry_locked(approval_id)
+        if not entry:
+            return JSONResponse(
+                status_code=404, content={"detail": "Approval not found"}
+            )
+        if entry["status"] != "pending":
+            return JSONResponse(
+                status_code=400, content={"detail": f"Already {entry['status']}"}
+            )
+        if entry["requested_by"] == api_key:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "You cannot approve your own request"},
+            )
+        # Claim it immediately, while still holding the lock, so a
+        # concurrent approve/reject on the same entry can't also pass the
+        # pending check and double-execute it.
+        entry["status"] = "approved"
+        entry["approved_by"] = api_key
+        entry["approver_role"] = approver_role
+        _save_approval_queue_locked()
+
+    # Execute outside the lock - this can take a while (SSH, ansible-playbook)
+    # and shouldn't block /approvals reads or other approve/reject calls.
     payload = WebhookPayload(**entry["payload"])
     event_type = payload.event_type
     action_config = get_action_config(event_type)
@@ -468,23 +595,21 @@ def approve_approval(approval_id: str):
     params = action_config.get("parameters", {}).copy()
     params.update(payload.parameters or {})
     dry_run = getattr(payload, "dry_run", False)
-    exec_result = None
-    if "playbook" in action_config:
-        playbook_path = action_config["playbook"]
-        exec_result = executor.run_playbook(playbook_path, params, dry_run=dry_run)
-    elif "script" in action_config:
-        script_path = action_config["script"]
-        args = [str(v) for v in params.values()] if params else None
-        exec_result = executor.run_script(script_path, args, dry_run=dry_run)
-    else:
-        entry["status"] = "rejected"
-        entry["result"] = {"error": "No playbook or script defined for action"}
+    exec_result = execute_action(action_config, controller_config, params, dry_run)
+    if exec_result is None:
+        with approval_lock:
+            entry["status"] = "rejected"
+            entry["result"] = {
+                "error": "No playbook, script, or command defined for action"
+            }
+            _save_approval_queue_locked()
         return JSONResponse(
             status_code=400,
-            content={"detail": "No playbook or script defined for action"},
+            content={"detail": "No playbook, script, or command defined for action"},
         )
-    entry["status"] = "approved"
-    entry["result"] = exec_result.as_dict()
+    with approval_lock:
+        entry["result"] = exec_result.as_dict()
+        _save_approval_queue_locked()
     # Write audit log
     audit_entry = {
         "user": entry["requested_by"],
@@ -498,22 +623,42 @@ def approve_approval(approval_id: str):
         "dry_run": dry_run,
         "approval_id": approval_id,
         "approval_status": "approved",
+        "approved_by": api_key,
+        "approver_role": approver_role,
     }
     write_audit_log(audit_entry)
     return {"status": "approved", "result": exec_result.as_dict()}
 
 
 @app.post("/approvals/{approval_id}/reject")
-def reject_approval(approval_id: str):
-    entry = get_approval_entry(approval_id)
-    if not entry:
-        return JSONResponse(status_code=404, content={"detail": "Approval not found"})
-    if entry["status"] != "pending":
+def reject_approval(approval_id: str, request: Request):
+    api_key = request.headers.get("x-api-key")
+    approver_role = get_role_from_api_key(api_key)
+    if not has_permission(approver_role, "approve_actions"):
         return JSONResponse(
-            status_code=400, content={"detail": f"Already {entry['status']}"}
+            status_code=403,
+            content={"detail": "Rejecting actions is not permitted for your role"},
         )
-    entry["status"] = "rejected"
-    entry["result"] = {"error": "Rejected by approver"}
+    with approval_lock:
+        entry = _find_approval_entry_locked(approval_id)
+        if not entry:
+            return JSONResponse(
+                status_code=404, content={"detail": "Approval not found"}
+            )
+        if entry["status"] != "pending":
+            return JSONResponse(
+                status_code=400, content={"detail": f"Already {entry['status']}"}
+            )
+        if entry["requested_by"] == api_key:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "You cannot reject your own request"},
+            )
+        entry["status"] = "rejected"
+        entry["result"] = {"error": "Rejected by approver"}
+        entry["approved_by"] = api_key
+        entry["approver_role"] = approver_role
+        _save_approval_queue_locked()
     # Write audit log
     audit_entry = {
         "user": entry["requested_by"],
@@ -527,6 +672,8 @@ def reject_approval(approval_id: str):
         "dry_run": entry["payload"].get("dry_run", False),
         "approval_id": approval_id,
         "approval_status": "rejected",
+        "approved_by": api_key,
+        "approver_role": approver_role,
     }
     write_audit_log(audit_entry)
     return {"status": "rejected"}

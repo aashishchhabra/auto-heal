@@ -4,6 +4,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+PUBLIC_PATHS = {"/health", "/live", "/ready"}
+
 
 class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     def get_valid_api_keys(self):
@@ -12,8 +14,9 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
         return set(config["api_keys"].keys())
 
     async def dispatch(self, request: Request, call_next):
-        # Allow health endpoint without auth
-        if request.url.path == "/health":
+        # Allow health/liveness/readiness probes without auth - these are
+        # hit by kubelet/Docker healthchecks, which don't send API keys.
+        if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
         api_key = request.headers.get("x-api-key")
         valid_api_keys = self.get_valid_api_keys()

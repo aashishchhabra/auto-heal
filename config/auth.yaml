@@ -2,12 +2,21 @@ roles:
   admin:
     permissions:
       - controller_override: true
+      - audit_read: true
+      - approvals_read: true
+      - approve_actions: true
   operator:
     permissions:
       - controller_override: false
+      - audit_read: true
+      - approvals_read: true
+      - approve_actions: true
   readonly:
     permissions:
       - controller_override: false
+      - audit_read: true
+      - approvals_read: true
+      - approve_actions: false
 
 api_keys:
   "admin-key": admin

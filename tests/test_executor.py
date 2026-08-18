@@ -114,3 +114,199 @@ def test_run_script_dry_run():
     assert result.error is None
     assert "[DRY-RUN]" in result.stdout
     assert "scripts/cleanup_disk.sh" in result.stdout
+
+
+ANSIBLE_CONTROLLER = {
+    "type": "ansible",
+    "host": "ansible.dc1.example.com",
+    "ssh_user": "ansible",
+    "ssh_key": "/secrets/dc1_ansible.key",
+}
+
+OC_CONTROLLER = {
+    "type": "oc",
+    "host": "oc.dc2.example.com",
+    "ssh_user": "ocadmin",
+    "ssh_key": "/secrets/dc2_oc.key",
+}
+
+
+def test_run_remote_playbook_builds_ssh_command():
+    executor = ActionExecutor()
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "ok"
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+        result = executor.run_remote(
+            ANSIBLE_CONTROLLER,
+            {"playbook": "playbooks/restart_service.yml"},
+            {"service_name": "nginx"},
+        )
+        assert result.success is True
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "ssh"
+        assert "-i" in cmd and "/secrets/dc1_ansible.key" in cmd
+        assert cmd[-2] == "ansible@ansible.dc1.example.com"
+        remote_cmd = cmd[-1]
+        assert remote_cmd.startswith("ansible-playbook playbooks/restart_service.yml")
+        assert "--extra-vars" in remote_cmd
+
+
+def test_run_remote_script_builds_ssh_command():
+    executor = ActionExecutor()
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "done"
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+        result = executor.run_remote(
+            OC_CONTROLLER,
+            {"script": "scripts/cleanup_disk.sh"},
+            {"path": "/tmp"},
+        )
+        assert result.success is True
+        remote_cmd = mock_run.call_args[0][0][-1]
+        assert remote_cmd == "scripts/cleanup_disk.sh /tmp"
+
+
+def test_run_remote_command_template():
+    executor = ActionExecutor()
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "restarted"
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+        result = executor.run_remote(
+            OC_CONTROLLER,
+            {"command": "oc rollout restart deployment/{deployment} -n {namespace}"},
+            {"deployment": "web", "namespace": "prod"},
+        )
+        assert result.success is True
+        remote_cmd = mock_run.call_args[0][0][-1]
+        assert remote_cmd == "oc rollout restart deployment/web -n prod"
+
+
+def test_run_remote_command_template_quotes_params_against_injection():
+    executor = ActionExecutor()
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = ""
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+        executor.run_remote(
+            OC_CONTROLLER,
+            {"command": "oc get pod {pod}"},
+            {"pod": "web; rm -rf /"},
+        )
+        remote_cmd = mock_run.call_args[0][0][-1]
+        # The whole malicious value must come through as a single quoted
+        # token, not as unquoted shell metacharacters.
+        assert remote_cmd == "oc get pod 'web; rm -rf /'"
+
+
+def test_run_remote_missing_param_for_command_template():
+    executor = ActionExecutor()
+    result = executor.run_remote(OC_CONTROLLER, {"command": "oc get pod {pod}"}, {})
+    assert result.success is False
+    assert "pod" in result.error
+
+
+def test_run_remote_ssh_connection_failure():
+    executor = ActionExecutor()
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 255
+        mock_proc.stdout = ""
+        mock_proc.stderr = "Permission denied (publickey)."
+        mock_run.return_value = mock_proc
+        result = executor.run_remote(
+            ANSIBLE_CONTROLLER, {"script": "scripts/health_check.sh"}, {}
+        )
+        assert result.success is False
+        assert result.exit_code == 255
+        assert "SSH connection" in result.error
+        assert "Permission denied" in result.error
+
+
+def test_run_remote_missing_host():
+    executor = ActionExecutor()
+    result = executor.run_remote(
+        {"type": "ansible", "ssh_user": "ansible"},
+        {"script": "scripts/health_check.sh"},
+        {},
+    )
+    assert result.success is False
+    assert "host" in result.error
+
+
+def test_run_remote_missing_ssh_user():
+    executor = ActionExecutor()
+    result = executor.run_remote(
+        {"type": "ansible", "host": "ansible.dc1.example.com"},
+        {"script": "scripts/health_check.sh"},
+        {},
+    )
+    assert result.success is False
+    assert "ssh_user" in result.error
+
+
+def test_run_remote_no_executable_defined():
+    executor = ActionExecutor()
+    result = executor.run_remote(ANSIBLE_CONTROLLER, {}, {})
+    assert result.success is False
+    assert "No playbook, script, or command" in result.error
+
+
+def test_run_remote_dry_run():
+    executor = ActionExecutor()
+    result = executor.run_remote(
+        OC_CONTROLLER,
+        {"command": "oc rollout restart deployment/{deployment}"},
+        {"deployment": "web"},
+        dry_run=True,
+    )
+    assert result.success is True
+    assert result.exit_code == 0
+    assert "[DRY-RUN]" in result.stdout
+    assert "ocadmin@oc.dc2.example.com" in result.stdout
+    assert "oc rollout restart deployment/web" in result.stdout
+
+
+def test_run_command_local_success():
+    executor = ActionExecutor()
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "restarted"
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+        result = executor.run_command(
+            "oc rollout restart deployment/{deployment}", {"deployment": "web"}
+        )
+        assert result.success is True
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["oc", "rollout", "restart", "deployment/web"]
+
+
+def test_run_command_missing_param():
+    executor = ActionExecutor()
+    result = executor.run_command("oc get pod {pod}", {})
+    assert result.success is False
+    assert "pod" in result.error
+
+
+def test_run_command_dry_run():
+    executor = ActionExecutor()
+    result = executor.run_command(
+        "oc rollout restart deployment/{deployment}",
+        {"deployment": "web"},
+        dry_run=True,
+    )
+    assert result.success is True
+    assert "[DRY-RUN]" in result.stdout
+    assert "oc rollout restart deployment/web" in result.stdout
