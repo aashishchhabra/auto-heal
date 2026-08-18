@@ -4,27 +4,16 @@ import os
 
 
 @pytest.fixture(autouse=True, scope="session")
-def patch_executor_and_subprocess():
-    # Patch ActionExecutor methods to always return a safe dummy result
-    from src.executor import ActionExecutionResult, ActionExecutor
-
-    dummy_result = ActionExecutionResult(
-        success=True,
-        stdout="mocked",
-        stderr="",
-        exit_code=0,
-        error=None,
-    )
-    with patch.object(
-        ActionExecutor, "run_playbook", return_value=dummy_result
-    ), patch.object(
-        ActionExecutor, "run_script", return_value=dummy_result
-    ), patch.object(
-        ActionExecutor, "run_remote", return_value=dummy_result
-    ), patch(
-        "subprocess.run"
-    ) as mock_subproc_run:
-        # subprocess.run always returns a MagicMock with safe defaults
+def patch_subprocess_default():
+    """
+    Session-wide safety net: nothing in the suite should shell out for real
+    (ansible-playbook, ssh, scripts) just because a test forgot to mock
+    subprocess.run. Only subprocess.run is patched here - ActionExecutor's
+    own methods are left alone so test_executor.py can exercise their real
+    logic; other test files get those methods dummied out per-test by
+    patch_executor below.
+    """
+    with patch("subprocess.run") as mock_subproc_run:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = "mocked"
@@ -35,10 +24,15 @@ def patch_executor_and_subprocess():
 
 @pytest.fixture(autouse=True)
 def patch_executor(monkeypatch, request):
-    # Only patch if not running in test_executor.py
+    # test_executor.py tests ActionExecutor's real implementation (with
+    # only subprocess.run mocked via the fixture above), so it must not
+    # get its own methods replaced with dummies here. Skip *patching*,
+    # not the test itself - pytest.skip() inside a fixture would skip
+    # every test in the file outright.
     test_file = request.node.fspath if hasattr(request.node, "fspath") else ""
     if test_file and os.path.basename(str(test_file)) == "test_executor.py":
-        pytest.skip("Skip global executor patching for executor unit tests.")
+        yield
+        return
 
     class DummyResult:
         def __init__(self, stdout):
@@ -65,5 +59,8 @@ def patch_executor(monkeypatch, request):
     )
     monkeypatch.setattr(
         "src.executor.ActionExecutor.run_remote", lambda *a, **kw: DummyResult("remote")
+    )
+    monkeypatch.setattr(
+        "src.executor.ActionExecutor.run_command", lambda *a, **kw: DummyResult("cmd")
     )
     yield

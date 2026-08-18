@@ -15,3 +15,14 @@ actions:
     description: Run a health check command
     script: scripts/health_check.sh
     default_controller: local
+
+  restart_deployment:
+    description: >-
+      Restart an OpenShift deployment by SSHing to the oc-configured
+      controller and running `oc rollout restart`. {deployment} and
+      {namespace} are substituted from parameters and shell-quoted before
+      the command reaches the controller's shell.
+    command: "oc rollout restart deployment/{deployment} -n {namespace}"
+    default_controller: dc2-oc
+    parameters:
+      namespace: "default"

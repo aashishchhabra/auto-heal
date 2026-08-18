@@ -69,6 +69,22 @@ cleanup_tmp:
     min_free_gb: 2
 ```
 
+### Raw Command Example (oc/kubectl-style Actions)
+For actions that don't warrant a full playbook or script file - e.g. a
+single `oc`/`kubectl` one-liner - use `command:` instead. `{param}`
+placeholders are substituted from the action's parameters.
+```yaml
+restart_deployment:
+  command: "oc rollout restart deployment/{deployment} -n {namespace}"
+  default_controller: dc2-oc
+  parameters:
+    namespace: "default"
+```
+When the target controller isn't local (see "Controller and Remote VM
+Access" below), the rendered command is run on the controller over SSH,
+with each parameter value shell-quoted first so parameter values can't
+break out into arbitrary shell commands.
+
 ### Custom Output Parsing (Optional)
 If your script/playbook outputs JSON or custom text, document the expected output format in comments or the PR description. This helps reviewers and users understand the result structure.
 

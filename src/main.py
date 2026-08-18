@@ -181,6 +181,57 @@ def get_approval_entry(entry_id):
     return None
 
 
+def is_local_controller(controller_config: dict) -> bool:
+    """
+    True for controllers Auto-Healer should run against directly on this
+    host (type: local, or an ansible controller whose host is this
+    machine). Everything else is reached over SSH via executor.run_remote.
+    """
+    if controller_config.get("type") == "local":
+        return True
+    return controller_config.get("host") in (None, "", "localhost", "127.0.0.1")
+
+
+def execute_action(
+    action_config: dict, controller_config: dict, params: dict, dry_run: bool
+):
+    """
+    Dispatch an action to the right ActionExecutor method based on the
+    controller it's targeting. Returns None if the action defines none of
+    playbook/script/command. Shared by /webhook and the approval-execution
+    path so the two can't drift.
+    """
+    controller_name = controller_config.get("host") or "local"
+    if not is_local_controller(controller_config):
+        logger.info(
+            f"Executing action remotely via controller '{controller_name}' "
+            f"with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_remote(
+            controller_config, action_config, params, dry_run=dry_run
+        )
+    if "playbook" in action_config:
+        logger.info(
+            f"Executing playbook '{action_config['playbook']}' locally "
+            f"with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_playbook(action_config["playbook"], params, dry_run=dry_run)
+    if "script" in action_config:
+        args = [str(v) for v in params.values()] if params else None
+        logger.info(
+            f"Executing script '{action_config['script']}' locally "
+            f"with args {args} (dry_run={dry_run})"
+        )
+        return executor.run_script(action_config["script"], args, dry_run=dry_run)
+    if "command" in action_config:
+        logger.info(
+            f"Executing command '{action_config['command']}' locally "
+            f"with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_command(action_config["command"], params, dry_run=dry_run)
+    return None
+
+
 @app.post("/webhook")
 async def webhook(request: Request):
     try:
@@ -241,27 +292,12 @@ async def webhook(request: Request):
             "detail": "Action requires approval before execution.",
         }
     # Dry-run support
-    exec_result = None
-    if "playbook" in action_config:
-        playbook_path = action_config["playbook"]
-        logger.info(
-            f"Executing playbook '{playbook_path}' on controller '{controller_name}' "
-            f"with params {params} (dry_run={dry_run})"
-        )
-        exec_result = executor.run_playbook(playbook_path, params, dry_run=dry_run)
-    elif "script" in action_config:
-        script_path = action_config["script"]
-        logger.info(
-            f"Executing script '{script_path}' on controller '{controller_name}' "
-            f"with params {params} (dry_run={dry_run})"
-        )
-        args = [str(v) for v in params.values()] if params else None
-        exec_result = executor.run_script(script_path, args, dry_run=dry_run)
-    else:
+    exec_result = execute_action(action_config, controller_config, params, dry_run)
+    if exec_result is None:
         logger.error(f"No executable defined for action '{event_type}'")
         return JSONResponse(
             status_code=400,
-            content={"detail": "No playbook or script defined for action"},
+            content={"detail": "No playbook, script, or command defined for action"},
         )
     logger.info(f"Execution result: {exec_result.as_dict()}")
     # Write audit log
@@ -463,20 +499,15 @@ def approve_approval(approval_id: str):
     params = action_config.get("parameters", {}).copy()
     params.update(payload.parameters or {})
     dry_run = getattr(payload, "dry_run", False)
-    exec_result = None
-    if "playbook" in action_config:
-        playbook_path = action_config["playbook"]
-        exec_result = executor.run_playbook(playbook_path, params, dry_run=dry_run)
-    elif "script" in action_config:
-        script_path = action_config["script"]
-        args = [str(v) for v in params.values()] if params else None
-        exec_result = executor.run_script(script_path, args, dry_run=dry_run)
-    else:
+    exec_result = execute_action(action_config, controller_config, params, dry_run)
+    if exec_result is None:
         entry["status"] = "rejected"
-        entry["result"] = {"error": "No playbook or script defined for action"}
+        entry["result"] = {
+            "error": "No playbook, script, or command defined for action"
+        }
         return JSONResponse(
             status_code=400,
-            content={"detail": "No playbook or script defined for action"},
+            content={"detail": "No playbook, script, or command defined for action"},
         )
     entry["status"] = "approved"
     entry["result"] = exec_result.as_dict()

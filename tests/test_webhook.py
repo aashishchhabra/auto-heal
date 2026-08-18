@@ -83,6 +83,77 @@ def test_webhook_unknown_action():
     assert response.json()["detail"] == "Unknown action/event_type"
 
 
+def test_webhook_remote_controller_uses_run_remote(monkeypatch):
+    # dc1-ansible is a real remote host in config/controllers.yaml (not
+    # localhost), so it must be dispatched through run_remote over SSH -
+    # not run locally via run_playbook.
+    calls = {}
+
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    def fake_run_remote(controller, action, params, dry_run=False):
+        calls["controller"] = controller
+        calls["action"] = action
+        calls["params"] = params
+        return DummyResult()
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError(
+            "run_playbook should not be called for a remote controller"
+        )
+
+    monkeypatch.setattr("src.main.executor.run_remote", fake_run_remote)
+    monkeypatch.setattr("src.main.executor.run_playbook", fail_if_called)
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "controller_override": "dc1-ansible",
+        "parameters": {"service_name": "nginx"},
+    }
+    response = client.post("/webhook", json=payload, headers=get_headers())
+    assert response.status_code == 200
+    assert response.json()["controller"] == "dc1-ansible"
+    assert calls["controller"]["host"] == "ansible.dc1.example.com"
+    assert calls["params"]["service_name"] == "nginx"
+
+
+def test_webhook_local_controller_does_not_use_run_remote(monkeypatch):
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError("run_remote should not be called for a local controller")
+
+    monkeypatch.setattr("src.main.executor.run_remote", fail_if_called)
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
+    response = client.post("/webhook", json=payload, headers=get_headers())
+    assert response.status_code == 200
+    assert response.json()["controller"] == "ansible_local"
+
+
 def test_webhook_unknown_controller():
     client = TestClient(app)
     payload = {
