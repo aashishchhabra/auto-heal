@@ -30,6 +30,10 @@ actions:
     # even if a flapping alert keeps re-triggering this action.
     cooldown_seconds: 300
     cooldown_key_param: deployment
+    # Restarting a production Deployment is worth more than an "info"
+    # notification even when it succeeds - see "Notifications" in
+    # docs/ACTION_ONBOARDING_GUIDE.md for how severity feeds routing.
+    severity: warning
 
   restart_deployment_kubeapi:
     description: >-
@@ -46,3 +50,4 @@ actions:
       namespace: "default"
     cooldown_seconds: 300
     cooldown_key_param: deployment
+    severity: warning

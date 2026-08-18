@@ -453,17 +453,46 @@ cluster network/RBAC access).
 
 ---
 
-## Phase 13: Enhanced Notification Integration
+## Phase 13: Enhanced Notification Integration **[COMPLETE except SMS]**
 **Goal:** Support more platforms, custom templates, and notification routing.
 
 ### Stories & Tasks
-- **Story 1: Multi-Platform Support**
+- **Story 1: Multi-Platform Support** **[PARTIAL - email/PagerDuty/Opsgenie done, SMS not]**
   - Task: Integrate email, PagerDuty, Opsgenie, SMS _(3d)_
-- **Story 2: Custom Templates & Routing**
-  - Task: Add notification templates per action/severity _(2d)_
-  - Task: Severity-based routing and throttling _(2d)_
-- **Story 3: Notification Deduplication**
-  - Task: Implement deduplication logic _(1d)_
+    - Email is stdlib SMTP (no new dependency); PagerDuty uses the
+      Events API v2, Opsgenie the Alert API. All five channels
+      (Slack/Teams/email/PagerDuty/Opsgenie) share one coordinator,
+      `NotificationSender.notify()`, rather than each call site having
+      to know which channels exist. SMS isn't built - no obvious
+      carrier-agnostic API to standardize on the way the others have one.
+      See `src/notifications.py`.
+  - Adjacent fix: approving a queued action (`/approvals/{id}/approve`)
+    previously sent no notification at all on completion - the
+    requester who approved a drain from their phone had no signal it
+    actually finished besides polling `/approvals`. Now goes through
+    the same `notify()` call the direct-execution path uses.
+- **Story 2: Custom Templates & Routing** **[COMPLETE]**
+  - Task: Add notification templates per action/severity _(2d)_ **[COMPLETE]**
+    - An action's `severity: info|warning|critical` field (`actions.yaml`)
+      feeds routing and templates; a failed execution is always bumped
+      to at least `warning` regardless of what the action declares.
+      Per-channel (or `default`) `str.format()` templates in
+      `config/notifications.yaml`; unconfigured channels keep their
+      original built-in wording.
+  - Task: Severity-based routing and throttling _(2d)_ **[COMPLETE]**
+    - `routing: {severity: [channels]}` in `config/notifications.yaml` -
+      unset (the default) sends every notification to every enabled
+      channel, unchanged from before this existed.
+- **Story 3: Notification Deduplication** **[COMPLETE]**
+  - Task: Implement deduplication logic _(1d)_ **[COMPLETE]**
+    - In-memory, on by default: suppresses a repeat
+      `(action, controller, status)` notification within
+      `window_seconds` (default 300) - independent of, and in addition
+      to, the cooldowns/rate limits that already throttle the
+      underlying `/webhook` calls.
+
+See "Notifications: Channels, Severity, Templates & Dedup" in
+`docs/ACTION_ONBOARDING_GUIDE.md`.
 
 **Phase 13 Estimate:** 8d
 
