@@ -15,6 +15,7 @@ from src.auth import APIKeyAuthMiddleware, get_role_from_api_key, has_permission
 from src.actions import get_action_config, get_controller_config, discover_actions
 from src.executor import ActionExecutor
 from src.cooldown import CooldownTracker
+from src.ratelimit import RateLimiter
 import logging.handlers
 from src.notifications import notification_sender
 
@@ -61,6 +62,11 @@ executor = ActionExecutor()
 
 COOLDOWN_STATE_PATH = os.path.join(os.path.dirname(__file__), "../logs/cooldowns.json")
 cooldown_tracker = CooldownTracker(COOLDOWN_STATE_PATH)
+
+RATE_LIMIT_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), "../config/rate_limits.yaml"
+)
+rate_limiter = RateLimiter(RATE_LIMIT_CONFIG_PATH)
 
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
 
@@ -300,6 +306,32 @@ def cooldown_block_response(event_type: str, controller_name: str, remaining: fl
     )
 
 
+def rate_limit_block_audit_entry(
+    event_type: Optional[str], api_key, role, params: Optional[dict]
+) -> dict:
+    return {
+        "user": api_key,
+        "role": role,
+        "action": event_type,
+        "controller": None,
+        "controller_type": None,
+        "parameters": params,
+        "execution": {"success": False, "error": "blocked-by-rate-limit"},
+        "client_ip": None,
+        "dry_run": None,
+        "blocked_reason": "rate_limit",
+    }
+
+
+def rate_limit_block_response(retry_after: float):
+    detail = f"Rate limit exceeded, retry in {retry_after:.0f} second(s)"
+    return JSONResponse(
+        status_code=429,
+        content={"detail": detail, "retry_after_seconds": round(retry_after, 1)},
+        headers={"Retry-After": str(int(retry_after) + 1)},
+    )
+
+
 def is_local_controller(controller_config: dict) -> bool:
     """
     True for controllers Auto-Healer should run against directly on this
@@ -368,11 +400,36 @@ async def webhook(request: Request):
     api_key = request.headers.get("x-api-key")
     role = get_role_from_api_key(api_key)
     event_type = payload.event_type
+
+    # Caller-level rate limit: checked before anything else, including
+    # whether event_type is even a real action, so garbage/typo payloads
+    # can't be used to bypass throttling.
+    caller_retry_after = rate_limiter.check(
+        f"caller:{api_key}", rate_limiter.limit_for_role(role)
+    )
+    if caller_retry_after is not None:
+        write_audit_log(
+            rate_limit_block_audit_entry(event_type, api_key, role, payload.parameters)
+        )
+        return rate_limit_block_response(caller_retry_after)
+
     action_config = get_action_config(event_type)
     if not action_config:
         return JSONResponse(
             status_code=400, content={"detail": "Unknown action/event_type"}
         )
+
+    # Action-level rate limit: protects a specific sensitive action across
+    # all callers, independent of any single caller's own limit.
+    action_retry_after = rate_limiter.check(
+        f"action:{event_type}", rate_limiter.limit_for_action(event_type)
+    )
+    if action_retry_after is not None:
+        write_audit_log(
+            rate_limit_block_audit_entry(event_type, api_key, role, payload.parameters)
+        )
+        return rate_limit_block_response(action_retry_after)
+
     # Controller override logic
     controller_override = payload.controller_override
     controller_name = controller_override or action_config.get("default_controller")

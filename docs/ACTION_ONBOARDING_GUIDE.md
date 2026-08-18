@@ -112,6 +112,35 @@ cooldown, since they never touch real infrastructure. Actions with no
 `cooldown_seconds` configured (the default) are never rate-limited by
 this mechanism.
 
+### Rate Limiting (Preventing API Abuse)
+Separate from cooldowns, `config/rate_limits.yaml` throttles `/webhook`
+itself along two independent dimensions - a request is blocked if either
+one is exceeded:
+- **Caller limit** - how many `/webhook` calls one API key can make per
+  minute. Set per role (`per_role`) with a `default` fallback for roles
+  not listed.
+- **Action limit** (optional, `per_action`) - how many `/webhook` calls
+  for one specific action can happen per minute, across *every* caller.
+  Use this for an action that's sensitive enough to cap regardless of who
+  (or how many different API keys) is triggering it.
+```yaml
+default:
+  requests_per_minute: 60
+per_role:
+  readonly: { requests_per_minute: 20 }
+per_action:
+  restart_deployment: { requests_per_minute: 10 }
+```
+A blocked call gets `429 Too Many Requests` with a `Retry-After` header
+and `retry_after_seconds` in the body, and (like cooldown blocks) still
+writes an audit log entry. Unlike cooldowns, rate-limit counters are
+in-memory only - a restart naturally resets them, which is fine since
+this protects the API from abuse rather than protecting infrastructure
+from repeated remediation. Rate limiting applies to `/webhook` only
+(both the queue-for-approval and direct-execution paths); it isn't
+applied to `/approvals/{id}/approve`, `/approvals/{id}/reject`, or
+read-only endpoints.
+
 ### Custom Output Parsing (Optional)
 If your script/playbook outputs JSON or custom text, document the expected output format in comments or the PR description. This helps reviewers and users understand the result structure.
 

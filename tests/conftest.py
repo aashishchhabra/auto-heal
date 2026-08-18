@@ -55,6 +55,21 @@ def reset_cooldown_tracker():
     main.cooldown_tracker._last_run.clear()
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """
+    rate_limiter is likewise a single module-level instance shared by
+    every test. Without a reset, unrelated tests hammering /webhook back
+    to back within the same test session (well within one 60s sliding
+    window) would eventually start tripping 429s on each other.
+    """
+    import src.main as main
+
+    main.rate_limiter._hits.clear()
+    yield
+    main.rate_limiter._hits.clear()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def patch_subprocess_default():
     """
