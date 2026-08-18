@@ -1,6 +1,48 @@
 import os
 import os.path
-from src.actions import discover_actions
+import pytest
+from src.actions import discover_actions, get_action_config, set_merged_actions
+import src.actions
+
+
+@pytest.fixture(autouse=True)
+def reset_merged_actions():
+    # get_action_config falls back to config/actions.yaml on disk when no
+    # merge has been set; make sure tests don't leak state into each other.
+    yield
+    set_merged_actions(None)
+
+
+def test_get_action_config_uses_merged_actions_once_set():
+    set_merged_actions({"custom_action": {"script": "scripts/custom.sh"}})
+    assert get_action_config("custom_action") == {"script": "scripts/custom.sh"}
+    # Not present in config/actions.yaml, so without the merge this would be None
+    assert get_action_config("not_in_merge") is None
+
+
+def test_get_action_config_falls_back_to_disk_when_unset():
+    assert src.actions._merged_actions is None
+    config = get_action_config("restart_service")
+    assert config["playbook"] == "playbooks/restart_service.yml"
+
+
+def test_explicit_config_actions_take_priority_over_discovered():
+    # config/actions.yaml gives restart_service a default service_name
+    # parameter; the plain directory scan does not. The merge must keep
+    # the explicit, richer definition rather than the discovered one.
+    discovered = discover_actions()
+    assert "parameters" not in discovered.get("restart_service", {})
+    explicit = {
+        "restart_service": {
+            "playbook": "playbooks/restart_service.yml",
+            "default_controller": "ansible_local",
+            "parameters": {"service_name": "nginx"},
+        }
+    }
+    merged = {**discovered, **explicit}
+    set_merged_actions(merged)
+    config = get_action_config("restart_service")
+    assert config["parameters"]["service_name"] == "nginx"
 
 
 def test_discover_actions_ignores_non_playbook_files(tmp_path, monkeypatch):

@@ -2,12 +2,15 @@ roles:
   admin:
     permissions:
       - controller_override: true
+      - audit_read: true
   operator:
     permissions:
       - controller_override: false
+      - audit_read: true
   readonly:
     permissions:
       - controller_override: false
+      - audit_read: true
 
 api_keys:
   "admin-key": admin

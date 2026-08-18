@@ -92,6 +92,51 @@ def test_audit_log_written_on_script(monkeypatch):
     assert "timestamp" in entry
 
 
+def test_audit_endpoint_accessible_to_all_roles(monkeypatch):
+    # audit_read must be granted in config/auth.yaml for every role, or
+    # /audit is unreachable regardless of who asks.
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+
+    for api_key, role in (
+        ("admin-key", "admin"),
+        ("operator-key", "operator"),
+        ("readonly-key", "readonly"),
+    ):
+        response = client.get("/audit", headers={"x-api-key": api_key})
+        assert response.status_code == 200, f"role {role} was denied /audit"
+        entries = response.json()
+        assert len(entries) == 1
+        assert entries[0]["role"] == "admin"
+
+
+def test_audit_endpoint_rejects_unknown_key():
+    # An unrecognized key maps to no role, so has_permission(None, ...)
+    # denies audit_read and the route itself returns 403. (Note: this is
+    # not the 401 the auth middleware is meant to produce for unknown
+    # keys - see the separate finding about APIKeyAuthMiddleware not
+    # being attached to the live `app` instance.)
+    client = TestClient(app)
+    response = client.get("/audit", headers={"x-api-key": "not-a-real-key"})
+    assert response.status_code == 403
+
+
 def test_audit_log_on_error(monkeypatch):
     class DummyResult:
         success = False

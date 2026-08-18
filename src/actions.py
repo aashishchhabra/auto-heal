@@ -1,6 +1,19 @@
 import yaml
 import os
 
+# Populated at startup by src.main's lifespan via set_merged_actions() with
+# discovered playbooks/scripts merged under config/actions.yaml. Kept as
+# module state (rather than rebinding get_action_config itself) so that
+# callers who did `from src.actions import get_action_config` still see
+# the merged data once it's set - reassigning the module attribute after
+# import does not affect names already bound elsewhere.
+_merged_actions = None
+
+
+def set_merged_actions(merged):
+    global _merged_actions
+    _merged_actions = merged
+
 
 def load_actions_config():
     with open(os.path.join(os.path.dirname(__file__), "../config/actions.yaml")) as f:
@@ -8,6 +21,8 @@ def load_actions_config():
 
 
 def get_action_config(action_name):
+    if _merged_actions is not None:
+        return _merged_actions.get(action_name)
     config = load_actions_config()
     return config["actions"].get(action_name)
 

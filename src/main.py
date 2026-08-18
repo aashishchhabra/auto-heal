@@ -94,17 +94,13 @@ async def lifespan(app: FastAPI):
 
     actions_path = os.path.join(os.path.dirname(__file__), "../config/actions.yaml")
     with open(actions_path) as f:
-        config_actions = yaml.safe_load(f)
-    # Merge, giving priority to config/actions.yaml
-    merged = {**discovered, **config_actions}
-
-    # Patch get_action_config to use merged actions
-    def get_action_config_patched(event_type):
-        return merged.get(event_type)
+        config_actions = yaml.safe_load(f) or {}
+    # Merge, giving priority to the explicit entries in config/actions.yaml
+    merged = {**discovered, **config_actions.get("actions", {})}
 
     import src.actions
 
-    src.actions.get_action_config = get_action_config_patched
+    src.actions.set_merged_actions(merged)
     yield
     # Place any shutdown logic here
 
