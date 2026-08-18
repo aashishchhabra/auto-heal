@@ -268,6 +268,67 @@ This is enforced in three places, all fed by the same
   the entry is marked `rejected` with a reason rather than left
   dangling `pending`.
 
+### Audit Log: Tamper-Evident Chain + External Shipping
+`logs/audit.log` is the durable, authoritative audit trail, and it's
+hash-chained: every entry carries `sequence`, `prev_hash` (the previous
+entry's `entry_hash`), and `entry_hash` (a SHA-256 of the entry's own
+fields + `prev_hash`) - the same tamper-EVIDENT technique AWS
+CloudTrail's log file integrity validation uses. Editing, deleting, or
+reordering a past line changes its hash and breaks every link after it.
+This doesn't stop someone with filesystem access from editing the file
+(that's what the external shipping below is for), but it makes any such
+edit detectable, deterministically, without needing a separate
+unmodified copy to diff against.
+
+`GET /audit/verify` (same `audit_read` permission as `/audit`) re-checks
+the whole chain on demand and reports the first broken line, if any:
+```json
+{"ok": true, "entries_checked": 142, "legacy_entries": 0,
+ "segment_boundaries": [], "first_broken_line": null, "detail": null}
+```
+`legacy_entries` counts pre-chain entries (from before this feature, or
+after upgrading) that exist but can't be verified. `segment_boundaries`
+records line numbers where the chain legitimately restarted at
+`sequence=1` (e.g. after external log rotation truncated the file) -
+that's a normal, explained discontinuity, not tampering, and doesn't
+affect `ok`.
+
+#### Shipping to an external log platform (Elasticsearch, Splunk, etc.)
+`config/audit.yaml` (all opt-in, disabled by default) mirrors every
+entry, best-effort, to one or both of:
+- **syslog** - RFC 3164 BSD syslog over UDP/TCP (stdlib
+  `logging.handlers.SysLogHandler`, no extra dependency), the
+  lowest-common-denominator protocol almost every collector/SIEM
+  ingests directly (rsyslog, Logstash's syslog input, Graylog, Splunk).
+- **http** - a single JSON POST/PUT per entry to any URL - the most
+  direct path to Elasticsearch itself (`POST <index>/_doc`), and equally
+  usable for a Logstash/Fluent Bit HTTP input, Splunk HEC, or a custom
+  webhook. Header values accept the same `vault:<path>#<field>` syntax
+  used everywhere else in this codebase.
+```yaml
+shipping:
+  http:
+    enabled: true
+    url: "https://es.example.com:9200/auto-healer-audit/_doc"
+    headers:
+      Authorization: "vault:secret/data/auto-healer/audit-shipping#authorization"
+```
+Both sinks send the entry mapped to **Elastic Common Schema (ECS)**
+(`src/audit.py::to_ecs`), so it's immediately useful in
+Elasticsearch/Kibana - or any other ECS-aware consumer - without a
+bespoke index mapping: `@timestamp`, `event.action`, `event.outcome`,
+`event.sequence`/`event.hash` (ECS's own fields for exactly this kind of
+integrity chain), `user.name`, `source.ip`. Fields with no ECS
+equivalent (the action's parameters, execution result, approval
+metadata) are namespaced under `auto_healer.*`, ECS's documented
+convention for custom extensions.
+
+A shipping failure (network error, bad credentials, a downed collector)
+is logged and never raises - it can never block a remediation action or
+the local, authoritative write. Log rotation and retention policy
+(bounding how large `logs/audit.log` grows, and for how long) aren't
+built yet; today it grows unbounded, same as before this feature.
+
 ### Custom Output Parsing (Optional)
 If your script/playbook outputs JSON or custom text, document the expected output format in comments or the PR description. This helps reviewers and users understand the result structure.
 

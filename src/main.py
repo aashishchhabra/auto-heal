@@ -24,6 +24,7 @@ from src.cooldown import CooldownTracker
 from src.ratelimit import RateLimiter
 import logging.handlers
 from src.notifications import notification_sender
+from src.audit import AuditChain, AuditShipper, verify_chain
 
 
 # Configure structured logging
@@ -75,26 +76,35 @@ RATE_LIMIT_CONFIG_PATH = os.path.join(
 rate_limiter = RateLimiter(RATE_LIMIT_CONFIG_PATH)
 
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
+AUDIT_SHIPPING_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), "../config/audit.yaml"
+)
+audit_chain = AuditChain(AUDIT_LOG_PATH)
+audit_shipper = AuditShipper(AUDIT_SHIPPING_CONFIG_PATH)
 
 
 def write_audit_log(entry: dict):
-    audit_entry = {
-        "timestamp": datetime.datetime.now(datetime.UTC)
-        .isoformat()
-        .replace("+00:00", "Z"),
-        "user": entry.get("user"),
-        "role": entry.get("role"),
-        "action": entry.get("action"),
-        "controller": entry.get("controller"),
-        "controller_type": entry.get("controller_type"),
-        "parameters": entry.get("parameters"),
-        "execution": entry.get("execution"),
-        "client_ip": entry.get("client_ip"),
-        "status": entry.get("execution", {}).get("success"),
-        "error": entry.get("execution", {}).get("error"),
-    }
-    with open(AUDIT_LOG_PATH, "a") as f:
-        f.write(json.dumps(audit_entry) + "\n")
+    """
+    Writes one audit entry to the local, hash-chained log (the
+    authoritative record - see src/audit.py::AuditChain) and mirrors it,
+    best-effort, to whatever external sinks config/audit.yaml enables.
+    Every field the caller passes in `entry` is preserved (previously
+    only a fixed subset was - dry_run/approval_id/blocked_reason and
+    friends were silently dropped even though every call site already
+    computed them); `status`/`error` are derived from `execution` for
+    convenient top-level querying, same as before.
+    """
+    execution = entry.get("execution") or {}
+    audit_entry = dict(entry)
+    audit_entry["timestamp"] = (
+        datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+    )
+    audit_entry.setdefault("client_ip", None)
+    audit_entry["execution"] = execution
+    audit_entry["status"] = execution.get("success")
+    audit_entry["error"] = execution.get("error")
+    finalized = audit_chain.append(audit_entry)
+    audit_shipper.ship(finalized)
 
 
 # Replace deprecated @app.on_event("startup") with lifespan event
@@ -695,6 +705,8 @@ async def get_audit(
         controller=controller,
         limit=limit,
     )
+    if not os.path.exists(AUDIT_LOG_PATH):
+        return []
     results = []
     with open(AUDIT_LOG_PATH, "r") as f:
         for line in reversed(list(f)):
@@ -707,6 +719,21 @@ async def get_audit(
             except Exception:
                 continue
     return results
+
+
+@app.get("/audit/verify")
+async def get_audit_verify(request: Request):
+    """
+    Checks logs/audit.log's hash chain for tampering - see
+    src/audit.py::verify_chain. Gated by the same audit_read permission
+    as /audit, since it's a read of the same data (just a structural
+    check rather than the entries themselves).
+    """
+    api_key = request.headers.get("x-api-key")
+    role_val = get_role_from_api_key(api_key)
+    if not has_permission(role_val, "audit_read"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    return verify_chain(AUDIT_LOG_PATH)
 
 
 @app.get("/approvals")

@@ -268,3 +268,39 @@ class VaultClient:
 # VAULT_K8S_ROLE are actually set, so importing this module has zero effect
 # on deployments that don't use Vault.
 vault_client = VaultClient()
+
+
+def resolve_vault_ref(
+    value: Optional[str], default_field: Optional[str] = None
+) -> Optional[str]:
+    """
+    Resolves `value` if it's a "vault:<path>#<field>" reference (field
+    defaults to `default_field` if omitted), fetching that field from
+    Vault via the module-level `vault_client`. A plain non-"vault:"
+    string (or None) is returned unchanged.
+
+    This is the shared parsing step behind every "vault:..." reference
+    in config - executor.py's _resolve_secret_file wraps this to also
+    materialize the value to a private tempfile for anything that needs
+    a secret as a file (ssh -i, a kubeconfig); a caller that just wants
+    the raw string (e.g. an HTTP header value) can call this directly.
+
+    Raises VaultUnavailableError if the reference can't be resolved (no
+    field given and no default, Vault unreachable, or the field isn't
+    present in the secret) - the same fail-closed contract as
+    get_secret. Callers must treat that as a hard failure, never
+    silently proceeding without the secret.
+    """
+    if not value or not value.startswith("vault:"):
+        return value
+    ref = value.removeprefix("vault:")
+    path, _, field = ref.partition("#")
+    field = field or default_field
+    if not field:
+        raise VaultUnavailableError(
+            f"vault: reference '{value}' has no field and no default field applies"
+        )
+    secret = vault_client.get_secret(path)
+    if field not in secret:
+        raise VaultUnavailableError(f"Vault secret at '{path}' has no field '{field}'")
+    return secret[field]

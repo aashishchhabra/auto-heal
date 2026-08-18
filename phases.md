@@ -311,9 +311,38 @@
 **Goal:** Provide immutable audit logs, export, and analytics for compliance.
 
 ### Stories & Tasks
-- **Story 1: Immutable Audit Log Storage**
-  - Task: Integrate with S3 or external SIEM _(2d)_
-  - Task: Add log rotation and retention policies _(1d)_
+- **Story 1: Immutable Audit Log Storage** **[PARTIAL - hash chain + SIEM shipping done, rotation/retention not]**
+  - Task: Make the audit log itself tamper-evident **[COMPLETE, not
+    originally a listed task but the actual substance of "immutable"]**
+    - Every `logs/audit.log` entry is SHA-256 hash-chained
+      (`sequence`/`prev_hash`/`entry_hash`), the same technique AWS
+      CloudTrail's log file integrity validation uses - editing,
+      deleting, or reordering a past entry is detectable without a
+      separate unmodified copy. `GET /audit/verify` checks the chain on
+      demand. This is tamper-EVIDENT, not tamper-PROOF - filesystem
+      access can still edit the file, verify() just makes it provable.
+      See `src/audit.py::AuditChain`/`verify_chain`.
+  - Task: Integrate with S3 or external SIEM **[PARTIAL - SIEM shipping
+    done, S3 not]**
+    - Each entry is optionally, best-effort mirrored to syslog
+      (RFC 3164, UDP/TCP) and/or a generic HTTP JSON sink, both mapped
+      to Elastic Common Schema (ECS) so they're immediately useful in
+      Elasticsearch/Kibana or any other ECS-aware/syslog-speaking
+      platform (Splunk, Graylog, Logstash, Datadog) without a bespoke
+      mapping. Config-driven, disabled by default, in
+      `config/audit.yaml`; header secrets support the same
+      `vault:<path>#<field>` syntax as everywhere else. A shipping
+      failure never blocks the local write or action execution. S3 (or
+      other WORM/object-lock archival storage) isn't built - that's a
+      distinct mechanism (durable archival) from log shipping (real-time
+      mirroring to a SIEM) and could be added as another sink later. See
+      `src/audit.py::AuditShipper` and "Audit Log: Tamper-Evident Chain
+      + External Shipping" in `docs/ACTION_ONBOARDING_GUIDE.md`.
+  - Task: Add log rotation and retention policies
+    - Not built - `logs/audit.log` still grows unbounded, same as
+      before this feature. Worth revisiting together with `verify()`'s
+      cost, which is a full-file scan (bounded per-write appends are
+      still cheap either way).
 - **Story 2: Export & Compliance**
   - Task: Export logs in CSV/JSON formats _(1d)_
   - Task: Add compliance metadata (user, timestamp, action) _(1d)_

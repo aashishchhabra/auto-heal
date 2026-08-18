@@ -341,7 +341,7 @@ def test_resolve_ssh_key_from_vault_default_field(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.return_value = {"private_key": "-----BEGIN KEY-----\nx"}
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     resolved, tmp_path = executor._resolve_ssh_key(
         "vault:secret/data/auto-healer/controllers/dc2-oc"
@@ -365,7 +365,7 @@ def test_resolve_ssh_key_from_vault_custom_field(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.return_value = {"ssh_private_key": "keydata"}
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     resolved, tmp_path = executor._resolve_ssh_key(
         "vault:secret/data/x#ssh_private_key"
@@ -383,7 +383,7 @@ def test_resolve_ssh_key_missing_field_raises(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.return_value = {"some_other_field": "x"}
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     with pytest.raises(VaultUnavailableError):
         executor._resolve_ssh_key("vault:secret/data/x")
@@ -393,7 +393,7 @@ def test_resolve_ssh_key_vault_error_propagates(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.side_effect = VaultUnavailableError("unreachable")
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     with pytest.raises(VaultUnavailableError):
         executor._resolve_ssh_key("vault:secret/data/x")
@@ -403,7 +403,7 @@ def test_run_remote_with_vault_ssh_key_uses_and_cleans_up_tempfile(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.return_value = {"private_key": "keydata"}
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     captured = {}
 
@@ -437,7 +437,7 @@ def test_run_remote_vault_failure_does_not_attempt_ssh(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.side_effect = VaultUnavailableError("sealed")
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     with patch("subprocess.run") as mock_run:
         result = executor.run_remote(
@@ -452,7 +452,7 @@ def test_run_remote_vault_failure_does_not_attempt_ssh(monkeypatch):
 def test_run_remote_dry_run_never_touches_vault(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     result = executor.run_remote(
         VAULT_CONTROLLER,
@@ -622,7 +622,7 @@ def test_build_kube_configuration_from_vault(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.return_value = {"token": "vault-token", "ca_cert": "ca-data"}
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     configuration, cleanup_paths = executor._build_kube_configuration(
         {
@@ -658,7 +658,7 @@ def test_build_kube_configuration_partial_vault_failure_cleans_up(monkeypatch):
         raise VaultUnavailableError("ca fetch failed")
 
     fake_client.get_secret.side_effect = get_secret
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     def snapshot():
         return {
@@ -708,7 +708,7 @@ def test_run_kube_action_vault_failure_returns_failure(monkeypatch):
     executor = ActionExecutor()
     fake_client = MagicMock()
     fake_client.get_secret.side_effect = VaultUnavailableError("sealed")
-    monkeypatch.setattr("src.executor.vault_client", fake_client)
+    monkeypatch.setattr("src.vault.vault_client", fake_client)
 
     result = executor.run_kube_action(
         {

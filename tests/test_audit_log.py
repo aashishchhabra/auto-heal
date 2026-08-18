@@ -161,3 +161,163 @@ def test_audit_log_on_error(monkeypatch):
     assert entry["execution"]["success"] is False
     assert entry["execution"]["error"] == "fail"
     assert "timestamp" in entry
+
+
+def test_audit_log_entries_are_hash_chained(monkeypatch):
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
+    headers = {"x-api-key": "admin-key"}
+    client.post("/webhook", json=payload, headers=headers)
+    client.post("/webhook", json=payload, headers=headers)
+
+    entries = read_audit_log()
+    assert len(entries) == 2
+    first, second = entries
+    assert first["sequence"] == 1
+    assert second["sequence"] == 2
+    assert second["prev_hash"] == first["entry_hash"]
+    assert "entry_hash" in first and "entry_hash" in second
+
+
+def test_audit_verify_endpoint_reports_healthy_chain(monkeypatch):
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+
+    resp = client.get("/audit/verify", headers={"x-api-key": "admin-key"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["entries_checked"] == 2
+
+
+def test_audit_verify_endpoint_detects_tampering(monkeypatch):
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "ok",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+
+    lines = open(AUDIT_LOG_PATH).readlines()
+    tampered = json.loads(lines[0])
+    tampered["action"] = "TAMPERED"
+    lines[0] = json.dumps(tampered) + "\n"
+    with open(AUDIT_LOG_PATH, "w") as f:
+        f.writelines(lines)
+
+    resp = client.get("/audit/verify", headers={"x-api-key": "admin-key"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["first_broken_line"] == 1
+
+
+def test_audit_verify_requires_audit_read_permission(monkeypatch):
+    import src.auth as auth
+
+    monkeypatch.setattr(
+        auth,
+        "_load_auth_config",
+        lambda: {
+            "roles": {"norights": {"permissions": []}},
+            "api_keys": {"norights-key": "norights"},
+        },
+    )
+    client = TestClient(app)
+    resp = client.get("/audit/verify", headers={"x-api-key": "norights-key"})
+    assert resp.status_code == 403
+
+
+def test_webhook_audit_entry_preserves_dry_run_flag(monkeypatch):
+    class DummyResult:
+        success = True
+
+        def as_dict(self):
+            return {
+                "success": True,
+                "stdout": "[DRY-RUN]",
+                "stderr": "",
+                "exit_code": 0,
+                "error": None,
+            }
+
+    monkeypatch.setattr(
+        "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
+    )
+    client = TestClient(app)
+    payload = {
+        "event_type": "restart_service",
+        "parameters": {"service_name": "nginx"},
+        "dry_run": True,
+    }
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+
+    entries = read_audit_log()
+    assert len(entries) == 1
+    # Previously dropped by write_audit_log's fixed field allowlist even
+    # though every call site already computed it.
+    assert entries[0]["dry_run"] is True
+
+
+def test_cooldown_block_audit_entry_preserves_blocked_reason():
+    # restart_deployment's default controller (dc2-oc) is non-local, so
+    # this goes through the conftest-autouse-mocked run_remote (a
+    # successful DummyResult) - no extra mocking needed here.
+    client = TestClient(app)
+    payload = {"event_type": "restart_deployment", "parameters": {"deployment": "web"}}
+    # First call executes and starts the cooldown; second is blocked.
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+    client.post("/webhook", json=payload, headers={"x-api-key": "admin-key"})
+
+    entries = read_audit_log()
+    assert len(entries) == 2
+    blocked = entries[1]
+    # Previously dropped by write_audit_log's fixed field allowlist even
+    # though cooldown_block_audit_entry already computed it.
+    assert blocked["blocked_reason"] == "cooldown"
+    assert blocked["dry_run"] is False
