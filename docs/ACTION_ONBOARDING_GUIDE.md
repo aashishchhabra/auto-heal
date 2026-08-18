@@ -268,7 +268,12 @@ routing:
 ```
 Leave it unset (the default) and every enabled channel gets every
 notification - the routing layer only narrows things down once you
-opt into it.
+opt into it. Once `routing:` is set at all, it becomes the complete
+picture: a severity you don't list gets **no** channels, not "every
+enabled channel" as a fallback. List all three severities you care
+about explicitly - `info: []` (or simply omitting a severity) is a
+deliberate way to say "don't notify anyone for this," not an oversight
+to fix.
 
 **Deduplication** (on by default) suppresses re-sending the same
 `(action, controller, status)` notification within `window_seconds`
