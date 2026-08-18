@@ -24,9 +24,11 @@ api_keys:
   "readonly-key": readonly
 
 # Instead of the literal map above, api_keys can be resolved from a
-# HashiCorp Vault KV v2 secret at request time (requires VAULT_ADDR and
-# VAULT_TOKEN to be set in the environment). The secret at that path must
-# be shaped exactly like the literal map: {api_key: role}. If this is
+# HashiCorp Vault KV v2 secret at request time (requires VAULT_ADDR, plus
+# either VAULT_TOKEN or VAULT_AUTH_METHOD=kubernetes + VAULT_K8S_ROLE, to
+# be set in the environment - see "Vault auth methods" in
+# docs/ACTION_ONBOARDING_GUIDE.md). The secret at that path must be
+# shaped exactly like the literal map: {api_key: role}. If this is
 # configured and Vault becomes unreachable, ALL keys are rejected (fails
 # closed) rather than falling back to a stale or partial set - see
 # src/auth.py::_resolve_api_keys.

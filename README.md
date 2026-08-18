@@ -17,7 +17,7 @@ Auto-Healer is a modular, production-ready API server for automated remediation 
 - Structured logging and audit trail
 - Slack/Teams notifications on action execution
 - Role-based access control
-- Optional HashiCorp Vault-backed secrets (API keys, controller SSH keys)
+- Optional HashiCorp Vault-backed secrets (API keys, controller SSH/kube credentials), with static-token or in-cluster Kubernetes Vault auth
 - Direct Kubernetes/OpenShift API actions (`kube_action`) alongside SSH-based execution
 - Comprehensive test suite and CI/CD integration
 

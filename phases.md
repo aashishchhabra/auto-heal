@@ -330,13 +330,17 @@
 
 ### Stories & Tasks
 - **Story 1: Secret Management Integration**
-  - Task: Integrate with Vault/AWS Secrets Manager **[PARTIAL - Vault only, KV v2 + static token]**
-    - API keys (`config/auth.yaml`) and controller SSH private keys
+  - Task: Integrate with Vault/AWS Secrets Manager **[PARTIAL - Vault only, KV v2, token + Kubernetes auth]**
+    - API keys (`config/auth.yaml`) and controller SSH/kube credentials
       (`config/controllers.yaml`) can both be resolved from Vault; fully
-      opt-in, existing plaintext config keeps working unchanged. AWS
-      Secrets Manager, AppRole/Kubernetes Vault auth, and dynamic
-      secrets are not built. See `src/vault.py` and the "Secrets via
-      Vault" section of `docs/ACTION_ONBOARDING_GUIDE.md`.
+      opt-in, existing plaintext config keeps working unchanged.
+      Authenticating *to* Vault itself supports a static `VAULT_TOKEN`
+      or, for in-cluster deployments, Vault's Kubernetes auth method
+      (`VAULT_AUTH_METHOD=kubernetes` - exchanges the pod's own
+      ServiceAccount JWT for a short-lived Vault token, no static Vault
+      credential needed at all). AWS Secrets Manager, AppRole auth, and
+      dynamic secrets are not built. See `src/vault.py` and the "Secrets
+      via Vault" section of `docs/ACTION_ONBOARDING_GUIDE.md`.
   - Task: Refactor config to use secrets **[COMPLETE for the two fields above]**
 - **Story 2: RBAC & API Keys**
   - Task: Per-action/controller API keys

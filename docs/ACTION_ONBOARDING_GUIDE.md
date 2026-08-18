@@ -295,10 +295,10 @@ vm1.example.com ansible_user=ubuntu ansible_ssh_private_key_file=/keys/ubuntu.pe
 This ensures a clear separation of responsibilities and secure credential management.
 
 ### Secrets via Vault (Optional)
-Both API keys (`config/auth.yaml`) and controller SSH private keys
+Both API keys (`config/auth.yaml`) and controller SSH/kube credentials
 (`config/controllers.yaml`) can be resolved from HashiCorp Vault instead
-of living in plaintext config, if `VAULT_ADDR` and `VAULT_TOKEN` are set
-in the environment:
+of living in plaintext config, if Vault is configured in the environment
+(see "Vault auth methods" below):
 ```yaml
 # config/auth.yaml
 api_keys:
@@ -311,18 +311,46 @@ controllers:
     # or, for a non-default field name:
     # ssh_key: "vault:secret/data/auto-healer/controllers/dc2-oc#ssh_private_key"
 ```
-Both are opt-in and read-only (KV v2, static token auth) - a deployment
-that doesn't set `VAULT_ADDR`/`VAULT_TOKEN` behaves exactly as if Vault
-support didn't exist. If `vault_path` **is** configured for API keys and
-Vault becomes unreachable, every key is rejected (fails closed) rather
-than falling back to a stale or empty set - auth silently staying open
-because a secrets backend hiccupped would be far worse than a legitimate
-caller getting a retryable 401. SSH keys fetched from Vault are written
-to a private (`0600`) tempfile for the duration of one `ssh` call and
-deleted immediately after - key material never touches persistent disk.
+Both are opt-in and read-only (KV v2) - a deployment that doesn't
+configure Vault behaves exactly as if Vault support didn't exist. If
+`vault_path` **is** configured for API keys and Vault becomes
+unreachable, every key is rejected (fails closed) rather than falling
+back to a stale or empty set - auth silently staying open because a
+secrets backend hiccupped would be far worse than a legitimate caller
+getting a retryable 401. SSH keys and kube credentials fetched from
+Vault are written to a private (`0600`) tempfile for the duration of one
+call and deleted immediately after - key material never touches
+persistent disk.
 
-AppRole/Kubernetes Vault auth methods and dynamic secrets aren't built
-yet; only a static `VAULT_TOKEN` is supported today.
+#### Vault auth methods
+Two ways to authenticate *to* Vault itself are supported, chosen with
+`VAULT_AUTH_METHOD`:
+- **`token`** (default) - a static token in `VAULT_TOKEN`. Simple, but
+  it's a long-lived credential that has to be provisioned and rotated
+  out-of-band, same as any other static secret.
+- **`kubernetes`** - [Vault's Kubernetes auth
+  method](https://developer.hashicorp.com/vault/docs/auth/kubernetes).
+  Auto-Healer exchanges its own pod's mounted ServiceAccount JWT for a
+  short-lived Vault token by calling `POST /v1/auth/<mount>/login` -
+  the same ServiceAccount already used for `in_cluster: true`
+  `type: kubeapi` controllers. There's no static Vault credential
+  sitting in a Secret or env var at all; the token is re-issued
+  automatically before it expires. Configure with:
+  ```
+  VAULT_ADDR=https://vault.example.com
+  VAULT_AUTH_METHOD=kubernetes
+  VAULT_K8S_ROLE=auto-healer          # the Vault role bound to this ServiceAccount
+  VAULT_K8S_MOUNT_PATH=kubernetes     # optional, defaults to "kubernetes"
+  VAULT_K8S_JWT_PATH=/var/run/secrets/kubernetes.io/serviceaccount/token  # optional
+  ```
+  On the Vault side this requires a `kubernetes` auth mount configured
+  with the cluster's API server address and CA, plus a role that binds
+  Auto-Healer's ServiceAccount/namespace to the policies it needs
+  (typically read on `secret/data/auto-healer/*`). This is the
+  recommended method for in-cluster deployments; use `token` for
+  deployments running outside Kubernetes.
+
+AppRole auth, AWS Secrets Manager, and dynamic secrets aren't built yet.
 
 ---
 
