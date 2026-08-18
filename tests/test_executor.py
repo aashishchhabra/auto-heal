@@ -464,3 +464,508 @@ def test_run_remote_dry_run_never_touches_vault(monkeypatch):
     assert result.success is True
     assert "[DRY-RUN]" in result.stdout
     fake_client.get_secret.assert_not_called()
+
+
+# ---------------------------------------------------------------------
+# kube_action / direct Kubernetes API execution
+# ---------------------------------------------------------------------
+
+import kubernetes  # noqa: E402
+from kubernetes.client.exceptions import ApiException  # noqa: E402
+
+IN_CLUSTER_CONTROLLER = {"type": "kubeapi", "in_cluster": True}
+
+
+def make_pod(name, namespace="default", daemonset_owned=False):
+    owner_refs = (
+        [
+            kubernetes.client.V1OwnerReference(
+                api_version="apps/v1", kind="DaemonSet", name="x", uid="1"
+            )
+        ]
+        if daemonset_owned
+        else []
+    )
+    return kubernetes.client.V1Pod(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=name, namespace=namespace, owner_references=owner_refs
+        )
+    )
+
+
+def test_render_kube_action_fields_substitutes_params():
+    executor = ActionExecutor()
+    rendered = executor._render_kube_action_fields(
+        {
+            "resource": "deployment",
+            "name": "{deployment}",
+            "namespace": "{namespace}",
+            "data": {"replicas": "{replicas}"},
+        },
+        {"deployment": "web", "namespace": "prod", "replicas": 3},
+    )
+    assert rendered == {
+        "resource": "deployment",
+        "name": "web",
+        "namespace": "prod",
+        "data": {"replicas": "3"},
+    }
+
+
+def test_render_kube_action_fields_missing_param_raises():
+    executor = ActionExecutor()
+    with pytest.raises(KeyError):
+        executor._render_kube_action_fields({"name": "{deployment}"}, {})
+
+
+def test_run_kube_action_unknown_verb():
+    executor = ActionExecutor()
+    result = executor.run_kube_action(
+        IN_CLUSTER_CONTROLLER, {"kube_action": "delete_everything"}, {}
+    )
+    assert result.success is False
+    assert "Unknown kube_action" in result.error
+
+
+def test_run_kube_action_missing_param():
+    executor = ActionExecutor()
+    result = executor.run_kube_action(
+        IN_CLUSTER_CONTROLLER,
+        {
+            "kube_action": "rollout_restart",
+            "resource": "deployment",
+            "name": "{deployment}",
+        },
+        {},
+    )
+    assert result.success is False
+    assert "Missing parameter" in result.error
+
+
+def test_run_kube_action_dry_run_never_builds_client(monkeypatch):
+    executor = ActionExecutor()
+    called = {}
+    monkeypatch.setattr(
+        kubernetes.config,
+        "load_incluster_config",
+        lambda **kw: called.setdefault("called", True),
+    )
+    result = executor.run_kube_action(
+        IN_CLUSTER_CONTROLLER,
+        {
+            "kube_action": "rollout_restart",
+            "resource": "deployment",
+            "name": "{deployment}",
+            "namespace": "{namespace}",
+        },
+        {"deployment": "web", "namespace": "prod"},
+        dry_run=True,
+    )
+    assert result.success is True
+    assert "[DRY-RUN]" in result.stdout
+    assert "rollout_restart" in result.stdout
+    assert "called" not in called
+
+
+def test_build_kube_configuration_in_cluster(monkeypatch):
+    executor = ActionExecutor()
+    calls = {}
+    monkeypatch.setattr(
+        kubernetes.config,
+        "load_incluster_config",
+        lambda client_configuration=None: calls.setdefault("cfg", client_configuration),
+    )
+    configuration, cleanup_paths = executor._build_kube_configuration(
+        {"type": "kubeapi", "in_cluster": True}
+    )
+    assert cleanup_paths == []
+    assert calls["cfg"] is configuration
+
+
+def test_build_kube_configuration_token_and_ca(tmp_path):
+    executor = ActionExecutor()
+    token_file = tmp_path / "token"
+    token_file.write_text("my-token\n")
+    ca_file = tmp_path / "ca.crt"
+    ca_file.write_text("-----BEGIN CERTIFICATE-----\n...")
+
+    configuration, cleanup_paths = executor._build_kube_configuration(
+        {
+            "type": "kubeapi",
+            "api_server": "https://api.example.com:6443",
+            "token": str(token_file),
+            "ca_cert": str(ca_file),
+        }
+    )
+    assert cleanup_paths == []
+    assert configuration.host == "https://api.example.com:6443"
+    assert configuration.get_api_key_with_prefix("authorization") == "Bearer my-token"
+    assert configuration.ssl_ca_cert == str(ca_file)
+
+
+def test_build_kube_configuration_token_without_ca_disables_verify(tmp_path):
+    executor = ActionExecutor()
+    token_file = tmp_path / "token"
+    token_file.write_text("my-token")
+
+    configuration, _ = executor._build_kube_configuration(
+        {
+            "type": "kubeapi",
+            "api_server": "https://api.example.com:6443",
+            "token": str(token_file),
+        }
+    )
+    assert configuration.verify_ssl is False
+
+
+def test_build_kube_configuration_from_vault(monkeypatch):
+    executor = ActionExecutor()
+    fake_client = MagicMock()
+    fake_client.get_secret.return_value = {"token": "vault-token", "ca_cert": "ca-data"}
+    monkeypatch.setattr("src.executor.vault_client", fake_client)
+
+    configuration, cleanup_paths = executor._build_kube_configuration(
+        {
+            "type": "kubeapi",
+            "api_server": "https://api.example.com:6443",
+            "token": "vault:secret/data/clusters/prod",
+            "ca_cert": "vault:secret/data/clusters/prod",
+        }
+    )
+    try:
+        assert len(cleanup_paths) == 2
+        assert (
+            configuration.get_api_key_with_prefix("authorization")
+            == "Bearer vault-token"
+        )
+        with open(configuration.ssl_ca_cert) as f:
+            assert f.read() == "ca-data"
+    finally:
+        for p in cleanup_paths:
+            if os.path.exists(p):
+                os.unlink(p)
+
+
+def test_build_kube_configuration_partial_vault_failure_cleans_up(monkeypatch):
+    import tempfile as tempfile_module
+
+    executor = ActionExecutor()
+    fake_client = MagicMock()
+
+    def get_secret(path):
+        if path == "secret/data/token-path":
+            return {"token": "vault-token"}
+        raise VaultUnavailableError("ca fetch failed")
+
+    fake_client.get_secret.side_effect = get_secret
+    monkeypatch.setattr("src.executor.vault_client", fake_client)
+
+    def snapshot():
+        return {
+            f
+            for f in os.listdir(tempfile_module.gettempdir())
+            if f.startswith("autoheal-secret-")
+        }
+
+    before = snapshot()
+    with pytest.raises(VaultUnavailableError):
+        executor._build_kube_configuration(
+            {
+                "type": "kubeapi",
+                "api_server": "https://api.example.com:6443",
+                "token": "vault:secret/data/token-path",
+                "ca_cert": "vault:secret/data/ca-path",
+            }
+        )
+    # The token tempfile created before the ca_cert lookup failed must not
+    # be left behind - no NEW autoheal-secret-* files versus before the call.
+    assert snapshot() == before
+
+
+def test_build_kube_configuration_no_credentials_raises():
+    executor = ActionExecutor()
+    with pytest.raises(ValueError):
+        executor._build_kube_configuration({"type": "kubeapi"})
+
+
+def test_run_kube_action_no_credentials_returns_failure():
+    executor = ActionExecutor()
+    result = executor.run_kube_action(
+        {"type": "kubeapi"},
+        {
+            "kube_action": "rollout_restart",
+            "resource": "deployment",
+            "name": "{deployment}",
+            "namespace": "{namespace}",
+        },
+        {"deployment": "web", "namespace": "prod"},
+    )
+    assert result.success is False
+    assert "credentials" in result.error.lower()
+
+
+def test_run_kube_action_vault_failure_returns_failure(monkeypatch):
+    executor = ActionExecutor()
+    fake_client = MagicMock()
+    fake_client.get_secret.side_effect = VaultUnavailableError("sealed")
+    monkeypatch.setattr("src.executor.vault_client", fake_client)
+
+    result = executor.run_kube_action(
+        {
+            "type": "kubeapi",
+            "api_server": "https://api.example.com:6443",
+            "token": "vault:secret/data/x",
+        },
+        {
+            "kube_action": "rollout_restart",
+            "resource": "deployment",
+            "name": "{deployment}",
+            "namespace": "{namespace}",
+        },
+        {"deployment": "web", "namespace": "prod"},
+    )
+    assert result.success is False
+    assert "Vault" in result.error
+
+
+def _patch_incluster(monkeypatch):
+    monkeypatch.setattr(kubernetes.config, "load_incluster_config", lambda **kw: None)
+
+
+def test_run_kube_action_rollout_restart_deployment(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_apps = MagicMock()
+    with patch("kubernetes.client.AppsV1Api", return_value=mock_apps):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "rollout_restart",
+                "resource": "deployment",
+                "name": "{deployment}",
+                "namespace": "{namespace}",
+            },
+            {"deployment": "web", "namespace": "prod"},
+        )
+    assert result.success is True
+    mock_apps.patch_namespaced_deployment.assert_called_once()
+    call_args = mock_apps.patch_namespaced_deployment.call_args[0]
+    assert call_args[0] == "web"
+    assert call_args[1] == "prod"
+    annotations = call_args[2]["spec"]["template"]["metadata"]["annotations"]
+    assert "kubectl.kubernetes.io/restartedAt" in annotations
+
+
+def test_run_kube_action_rollout_restart_statefulset(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_apps = MagicMock()
+    with patch("kubernetes.client.AppsV1Api", return_value=mock_apps):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "rollout_restart",
+                "resource": "statefulset",
+                "name": "{name}",
+                "namespace": "{namespace}",
+            },
+            {"name": "db", "namespace": "prod"},
+        )
+    assert result.success is True
+    mock_apps.patch_namespaced_stateful_set.assert_called_once()
+
+
+def test_run_kube_action_rollout_restart_unsupported_resource(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    with patch("kubernetes.client.AppsV1Api", return_value=MagicMock()):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "rollout_restart",
+                "resource": "job",
+                "name": "{name}",
+                "namespace": "{namespace}",
+            },
+            {"name": "x", "namespace": "prod"},
+        )
+    assert result.success is False
+    assert "Unsupported resource" in result.error
+
+
+def test_run_kube_action_delete_pod(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_core = MagicMock()
+    with patch("kubernetes.client.CoreV1Api", return_value=mock_core):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {"kube_action": "delete_pod", "name": "{pod}", "namespace": "{namespace}"},
+            {"pod": "web-abc123", "namespace": "prod"},
+        )
+    assert result.success is True
+    mock_core.delete_namespaced_pod.assert_called_once_with("web-abc123", "prod")
+
+
+def test_run_kube_action_scale(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_apps = MagicMock()
+    with patch("kubernetes.client.AppsV1Api", return_value=mock_apps):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "scale",
+                "resource": "deployment",
+                "name": "{deployment}",
+                "namespace": "{namespace}",
+                "data": {"replicas": "{replicas}"},
+            },
+            {"deployment": "web", "namespace": "prod", "replicas": 5},
+        )
+    assert result.success is True
+    mock_apps.patch_namespaced_deployment_scale.assert_called_once_with(
+        "web", "prod", {"spec": {"replicas": 5}}
+    )
+
+
+def test_run_kube_action_scale_missing_replicas(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    with patch("kubernetes.client.AppsV1Api", return_value=MagicMock()):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "scale",
+                "resource": "deployment",
+                "name": "{deployment}",
+                "namespace": "{namespace}",
+            },
+            {"deployment": "web", "namespace": "prod"},
+        )
+    assert result.success is False
+    assert "replicas" in result.error
+
+
+def test_run_kube_action_cordon_node(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_core = MagicMock()
+    with patch("kubernetes.client.CoreV1Api", return_value=mock_core):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {"kube_action": "cordon_node", "node_name": "{node}"},
+            {"node": "node-1"},
+        )
+    assert result.success is True
+    mock_core.patch_node.assert_called_once_with(
+        "node-1", {"spec": {"unschedulable": True}}
+    )
+
+
+def test_run_kube_action_uncordon_node(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_core = MagicMock()
+    with patch("kubernetes.client.CoreV1Api", return_value=mock_core):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {"kube_action": "uncordon_node", "node_name": "{node}"},
+            {"node": "node-1"},
+        )
+    assert result.success is True
+    mock_core.patch_node.assert_called_once_with(
+        "node-1", {"spec": {"unschedulable": False}}
+    )
+
+
+def test_run_kube_action_patch_configmap(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_core = MagicMock()
+    with patch("kubernetes.client.CoreV1Api", return_value=mock_core):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "patch_configmap",
+                "name": "{configmap}",
+                "namespace": "{namespace}",
+                "data": {"feature_x_enabled": "{enabled}"},
+            },
+            {"configmap": "app-config", "namespace": "prod", "enabled": "true"},
+        )
+    assert result.success is True
+    mock_core.patch_namespaced_config_map.assert_called_once_with(
+        "app-config", "prod", {"data": {"feature_x_enabled": "true"}}
+    )
+
+
+def test_run_kube_action_drain_node_skips_daemonset_pods_and_evicts_rest(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_core = MagicMock()
+    mock_core.list_pod_for_all_namespaces.return_value = MagicMock(
+        items=[
+            make_pod("web-1"),
+            make_pod("web-2"),
+            make_pod("fluentd-abc", daemonset_owned=True),
+        ]
+    )
+    with patch("kubernetes.client.CoreV1Api", return_value=mock_core):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {"kube_action": "drain_node", "node_name": "{node}"},
+            {"node": "node-1"},
+        )
+    assert result.success is True
+    mock_core.patch_node.assert_called_once_with(
+        "node-1", {"spec": {"unschedulable": True}}
+    )
+    assert mock_core.create_namespaced_pod_eviction.call_count == 2
+    evicted_names = {
+        c.args[0] for c in mock_core.create_namespaced_pod_eviction.call_args_list
+    }
+    assert evicted_names == {"web-1", "web-2"}
+
+
+def test_run_kube_action_drain_node_reports_eviction_failures(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_core = MagicMock()
+    mock_core.list_pod_for_all_namespaces.return_value = MagicMock(
+        items=[make_pod("web-1")]
+    )
+    mock_core.create_namespaced_pod_eviction.side_effect = ApiException(
+        status=429, reason="Too Many Requests"
+    )
+    with patch("kubernetes.client.CoreV1Api", return_value=mock_core):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {"kube_action": "drain_node", "node_name": "{node}"},
+            {"node": "node-1"},
+        )
+    assert result.success is False
+    assert "could not be evicted" in result.error
+
+
+def test_run_kube_action_api_exception_maps_to_failure(monkeypatch):
+    executor = ActionExecutor()
+    _patch_incluster(monkeypatch)
+    mock_apps = MagicMock()
+    mock_apps.patch_namespaced_deployment.side_effect = ApiException(
+        status=404, reason="Not Found"
+    )
+    with patch("kubernetes.client.AppsV1Api", return_value=mock_apps):
+        result = executor.run_kube_action(
+            IN_CLUSTER_CONTROLLER,
+            {
+                "kube_action": "rollout_restart",
+                "resource": "deployment",
+                "name": "{deployment}",
+                "namespace": "{namespace}",
+            },
+            {"deployment": "missing", "namespace": "prod"},
+        )
+    assert result.success is False
+    assert result.exit_code == 404
+    assert "Not Found" in result.error

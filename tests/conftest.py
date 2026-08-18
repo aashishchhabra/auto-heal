@@ -130,4 +130,8 @@ def patch_executor(monkeypatch, request):
     monkeypatch.setattr(
         "src.executor.ActionExecutor.run_command", lambda *a, **kw: DummyResult("cmd")
     )
+    monkeypatch.setattr(
+        "src.executor.ActionExecutor.run_kube_action",
+        lambda *a, **kw: DummyResult("kube"),
+    )
     yield

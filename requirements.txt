@@ -3,6 +3,7 @@ pydantic
 starlette
 requests
 pyyaml
+kubernetes
 pytest
 flake8
 black

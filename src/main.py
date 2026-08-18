@@ -343,16 +343,31 @@ def is_local_controller(controller_config: dict) -> bool:
     return controller_config.get("host") in (None, "", "localhost", "127.0.0.1")
 
 
+NO_EXECUTABLE_ERROR = "No playbook, script, command, or kube_action defined for action"
+
+
 def execute_action(
     action_config: dict, controller_config: dict, params: dict, dry_run: bool
 ):
     """
     Dispatch an action to the right ActionExecutor method based on the
     controller it's targeting. Returns None if the action defines none of
-    playbook/script/command. Shared by /webhook and the approval-execution
-    path so the two can't drift.
+    playbook/script/command/kube_action. Shared by /webhook and the
+    approval-execution path so the two can't drift.
     """
-    controller_name = controller_config.get("host") or "local"
+    controller_name = (
+        controller_config.get("host")
+        or controller_config.get("api_server")
+        or ("in-cluster" if controller_config.get("in_cluster") else "local")
+    )
+    if controller_config.get("type") == "kubeapi":
+        logger.info(
+            f"Executing kube_action '{action_config.get('kube_action')}' via "
+            f"controller '{controller_name}' with params {params} (dry_run={dry_run})"
+        )
+        return executor.run_kube_action(
+            controller_config, action_config, params, dry_run=dry_run
+        )
     if not is_local_controller(controller_config):
         logger.info(
             f"Executing action remotely via controller '{controller_name}' "
@@ -488,7 +503,7 @@ async def webhook(request: Request):
         logger.error(f"No executable defined for action '{event_type}'")
         return JSONResponse(
             status_code=400,
-            content={"detail": "No playbook, script, or command defined for action"},
+            content={"detail": NO_EXECUTABLE_ERROR},
         )
     if not dry_run and cooldown_seconds:
         # Record on any real attempt, success or failure - a failing
@@ -745,13 +760,11 @@ def approve_approval(approval_id: str, request: Request):
     if exec_result is None:
         with approval_lock:
             entry["status"] = "rejected"
-            entry["result"] = {
-                "error": "No playbook, script, or command defined for action"
-            }
+            entry["result"] = {"error": NO_EXECUTABLE_ERROR}
             _save_approval_queue_locked()
         return JSONResponse(
             status_code=400,
-            content={"detail": "No playbook, script, or command defined for action"},
+            content={"detail": NO_EXECUTABLE_ERROR},
         )
     if not dry_run and cooldown_seconds:
         cooldown_tracker.record(cd_key)

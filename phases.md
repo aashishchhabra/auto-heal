@@ -358,7 +358,7 @@
 
 **Phase 12 Estimate:** 9d
 
-### Addendum: Kubernetes-Native Execution (Deferred)
+### Addendum: Kubernetes-Native Execution **[COMPLETE]**
 The `oc` controller type executes by SSHing to a bastion host that
 already has an `oc` session, then running `oc`/`kubectl` commands there -
 the same model as the Ansible controllers. This is a reasonable fit for
@@ -379,8 +379,18 @@ Two ways to close that gap were considered:
   controller type. A new execution primitive and action schema, not a
   secrets-management change.
 
-Decision: skip (A), defer (B) to its own future phase. The `oc`
-controller stays SSH-only for now.
+Decision: skip (A), build (B). Implemented as `type: kubeapi` controllers
++ `kube_action` (a deliberately closed verb set: `rollout_restart`,
+`delete_pod`, `scale`, `cordon_node`, `uncordon_node`, `drain_node`,
+`patch_configmap` - not a generic API proxy). Credentials: in-cluster
+ServiceAccount auto-detection, explicit token+api_server+ca_cert, or a
+kubeconfig - all three accepted, all Vault-referenceable the same way
+ssh_key is. See `src/executor.py::ActionExecutor.run_kube_action` and
+the "Direct Kubernetes API Actions" section of
+`docs/ACTION_ONBOARDING_GUIDE.md`. The `oc` (SSH) controller type is
+unchanged and stays available as the more general option (arbitrary
+`oc`/`kubectl` CLI functionality, or environments without direct
+cluster network/RBAC access).
 
 ---
 
