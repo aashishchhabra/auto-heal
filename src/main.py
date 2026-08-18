@@ -56,8 +56,6 @@ file_handler = logging.handlers.RotatingFileHandler(
 file_handler.setFormatter(JsonFormatter())
 logger.addHandler(file_handler)
 
-app = FastAPI()
-app.add_middleware(APIKeyAuthMiddleware)
 executor = ActionExecutor()
 
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
@@ -106,6 +104,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(APIKeyAuthMiddleware)
 
 
 @app.get("/health")

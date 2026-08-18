@@ -18,15 +18,26 @@ def test_health():
 
 
 def test_auth_required():
-    # This endpoint does not exist, so we expect 404
+    # Auth is checked before routing, so an unauthenticated request to a
+    # nonexistent path is still rejected for lacking credentials, not
+    # because the path is missing.
     response = client.get("/some-protected-endpoint")
+    assert response.status_code == 401
+
+
+def test_auth_required_404_after_valid_key():
+    # With a valid key, a nonexistent path falls through to normal 404.
+    response = client.get(
+        "/some-protected-endpoint", headers={"x-api-key": "admin-key"}
+    )
     assert response.status_code == 404
 
 
 def test_protected_requires_auth():
-    # /protected is not protected, so we expect 200
+    # /protected has no auth exemption, so a request with no key is
+    # rejected by APIKeyAuthMiddleware before reaching the route.
     response = client.get("/protected")
-    assert response.status_code == 200
+    assert response.status_code == 401
 
 
 def test_protected_with_valid_api_key():

@@ -127,14 +127,11 @@ def test_audit_endpoint_accessible_to_all_roles(monkeypatch):
 
 
 def test_audit_endpoint_rejects_unknown_key():
-    # An unrecognized key maps to no role, so has_permission(None, ...)
-    # denies audit_read and the route itself returns 403. (Note: this is
-    # not the 401 the auth middleware is meant to produce for unknown
-    # keys - see the separate finding about APIKeyAuthMiddleware not
-    # being attached to the live `app` instance.)
+    # APIKeyAuthMiddleware rejects the request before it ever reaches the
+    # route, since "not-a-real-key" isn't in config/auth.yaml.
     client = TestClient(app)
     response = client.get("/audit", headers={"x-api-key": "not-a-real-key"})
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 def test_audit_log_on_error(monkeypatch):

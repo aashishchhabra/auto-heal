@@ -273,19 +273,19 @@ def test_approval_list_and_approve(monkeypatch):
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
     # List approvals
-    resp2 = client.get("/approvals")
+    resp2 = client.get("/approvals", headers=get_headers())
     assert resp2.status_code == 200
     approvals = resp2.json()
     found = [a for a in approvals if a["id"] == approval_id]
     assert found and found[0]["status"] == "pending"
     # Approve
-    resp3 = client.post(f"/approvals/{approval_id}/approve")
+    resp3 = client.post(f"/approvals/{approval_id}/approve", headers=get_headers())
     assert resp3.status_code == 200
     data = resp3.json()
     assert data["status"] == "approved"
     assert data["result"]["success"] is True
     # Approvals list should now show status approved
-    resp4 = client.get("/approvals")
+    resp4 = client.get("/approvals", headers=get_headers())
     found2 = [a for a in resp4.json() if a["id"] == approval_id]
     assert found2 and found2[0]["status"] == "approved"
 
@@ -301,21 +301,21 @@ def test_approval_reject(monkeypatch):
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
     # Reject
-    resp2 = client.post(f"/approvals/{approval_id}/reject")
+    resp2 = client.post(f"/approvals/{approval_id}/reject", headers=get_headers())
     assert resp2.status_code == 200
     data = resp2.json()
     assert data["status"] == "rejected"
     # Approvals list should now show status rejected
-    resp3 = client.get("/approvals")
+    resp3 = client.get("/approvals", headers=get_headers())
     found = [a for a in resp3.json() if a["id"] == approval_id]
     assert found and found[0]["status"] == "rejected"
 
 
 def test_approval_not_found():
     client = TestClient(app)
-    resp = client.post("/approvals/notarealid/approve")
+    resp = client.post("/approvals/notarealid/approve", headers=get_headers())
     assert resp.status_code == 404
-    resp2 = client.post("/approvals/notarealid/reject")
+    resp2 = client.post("/approvals/notarealid/reject", headers=get_headers())
     assert resp2.status_code == 404
 
 
@@ -346,11 +346,11 @@ def test_approval_already_processed(monkeypatch):
     resp = client.post("/webhook", json=payload, headers=get_headers())
     approval_id = resp.json()["approval_id"]
     # Approve
-    resp2 = client.post(f"/approvals/{approval_id}/approve")
+    resp2 = client.post(f"/approvals/{approval_id}/approve", headers=get_headers())
     assert resp2.status_code == 200
     # Approve again (should fail)
-    resp3 = client.post(f"/approvals/{approval_id}/approve")
+    resp3 = client.post(f"/approvals/{approval_id}/approve", headers=get_headers())
     assert resp3.status_code == 400
     # Reject after approve (should fail)
-    resp4 = client.post(f"/approvals/{approval_id}/reject")
+    resp4 = client.post(f"/approvals/{approval_id}/reject", headers=get_headers())
     assert resp4.status_code == 400
