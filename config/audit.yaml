@@ -1,18 +1,42 @@
-# Optional shipping of the audit trail to an external log platform.
+# Configuration for the audit trail: local rotation/retention, and
+# optional shipping to an external log platform.
 #
 # logs/audit.log (hash-chained, see src/audit.py::AuditChain) is always
 # written and is the durable, authoritative record - everything below is
-# an OPT-IN, best-effort MIRROR of it. Both sinks are disabled by
-# default; a deployment that never touches this file behaves exactly as
-# before this feature existed. A shipping failure (network error, bad
-# credentials, downed collector) is logged and never blocks action
-# execution or the local write - see AuditShipper's docstring.
+# OPT-IN. A deployment that never touches this file behaves exactly as
+# before this feature existed: unbounded growth, no external shipping.
+
+# Local rotation and retention. Disabled by default - logs/audit.log
+# grows unbounded until this is turned on. Rotation is size- and/or
+# time-based (either or both); a rotated file is renamed to
+# "audit.log.<UTC timestamp>" rather than deleted or truncated, so it
+# stays independently readable and verifiable (GET /audit/verify only
+# ever checks the currently-active file - see "Log Rotation &
+# Retention" in docs/ACTION_ONBOARDING_GUIDE.md for how to verify
+# rotated-out history). Retention is expressed in days, not a file
+# count, since compliance windows ("keep 1 year of audit logs") are
+# calendar-based, not volume-based. Every rotation is itself recorded as
+# the first entry of the new segment - deleting old audit history is
+# something an auditor should be able to see happened, not a silent gap.
+retention:
+  enabled: false
+  max_bytes: 52428800     # rotate when audit.log reaches this size (50 MiB) - 0/omit disables size-based rotation
+  rotate_interval_days: 30 # also rotate at least this often - 0/omit disables time-based rotation
+  retention_days: 365      # delete ROTATED files older than this many days - 0/omit keeps them forever (rotate, never delete)
+
+# Optional shipping of the audit trail to an external log platform.
+# Both sinks are disabled by default and best-effort: a shipping failure
+# (network error, bad credentials, downed collector) is logged and
+# never blocks action execution or the local write - see AuditShipper's
+# docstring.
 #
 # Each shipped entry is mapped to Elastic Common Schema (ECS) -
 # https://www.elastic.co/guide/en/ecs/current/index.html - so it's
 # immediately usable in Elasticsearch/Kibana (or any other ECS-aware
 # consumer) without a bespoke index mapping, regardless of which sink
-# delivers it.
+# delivers it. Rotation/retention events (above) are recorded locally
+# but are not currently shipped - only entries passed through
+# write_audit_log are.
 shipping:
   # RFC 3164 BSD syslog over UDP or TCP (Python's stdlib
   # logging.handlers.SysLogHandler) - the lowest-common-denominator

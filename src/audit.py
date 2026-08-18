@@ -1,7 +1,8 @@
 """
-Tamper-evident, hash-chained audit log storage, plus optional best-effort
-shipping of each entry to an external log platform (syslog and/or a
-generic HTTP JSON sink), configured via config/audit.yaml.
+Tamper-evident, hash-chained audit log storage, with optional local
+rotation/retention and best-effort shipping of each entry to an external
+log platform (syslog and/or a generic HTTP JSON sink) - all configured
+via config/audit.yaml.
 
 "Immutable" here means tamper-EVIDENT, not tamper-PROOF: nothing in this
 process stops someone with filesystem access from editing logs/audit.log
@@ -20,6 +21,7 @@ or Elasticsearch cluster must never block a remediation action or the
 request that triggered it.
 """
 
+import datetime
 import hashlib
 import json
 import logging
@@ -27,7 +29,7 @@ import logging.handlers
 import os
 import socket
 from threading import Lock
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 import yaml
@@ -79,6 +81,33 @@ def _read_last_line(path: str, chunk_size: int = 65536) -> Optional[str]:
     return None
 
 
+def _read_first_entry_timestamp(path: str) -> Optional[datetime.datetime]:
+    """
+    Returns the `timestamp` of the first entry in `path`, or None if the
+    file doesn't exist, is empty, or that entry has no parseable
+    timestamp. Used to determine how old the current segment is for
+    time-based rotation - a plain forward read of one line, not the
+    bounded-backward-chunks approach _read_last_line uses, since the
+    first line is always exactly where a forward read starts.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                ts = entry.get("timestamp")
+                if not ts:
+                    return None
+                return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    return None
+
+
 class AuditChain:
     """
     Appends JSON-lines entries to `path`, each one cryptographically
@@ -110,11 +139,38 @@ class AuditChain:
     trail, which is a worse outcome than a visible, explained segment
     boundary. verify() understands and reports these boundaries
     explicitly rather than treating them as tampering.
+
+    Local rotation and retention (both opt-in via config/audit.yaml's
+    `retention` section, disabled by default) work with the chain design
+    rather than against it: a rotated-away file is renamed aside, never
+    truncated or edited, so it stays independently verifiable; the next
+    write to `path` simply starts a fresh, correctly-anchored segment -
+    exactly the "file removed externally" case described above. Every
+    rotation records itself as the first entry of that new segment
+    (action="audit_log_rotation", noting which file it rotated from and
+    which expired archives, if any, were deleted per `retention_days`) -
+    deleting audit history is itself something an auditor should be able
+    to see happened, not a silent gap.
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, config_path: Optional[str] = None):
         self.path = path
+        self.config_path = config_path
         self._lock = Lock()
+        self._retention_config = self._load_retention_config()
+
+    def _load_retention_config(self) -> dict:
+        if not self.config_path or not os.path.exists(self.config_path):
+            return {}
+        try:
+            with open(self.config_path) as f:
+                return (yaml.safe_load(f) or {}).get("retention") or {}
+        except (yaml.YAMLError, OSError) as e:
+            logger.error(
+                f"Failed to load retention config from {self.config_path}, "
+                f"rotation/retention disabled: {e}"
+            )
+            return {}
 
     def _current_state(self) -> Tuple[int, str]:
         last = _read_last_line(self.path)
@@ -132,17 +188,110 @@ class AuditChain:
             )
             return (0, GENESIS_HASH)
 
+    def _write_locked(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """Adds chain fields to `entry` and writes it. Caller must hold `_lock`."""
+        last_sequence, last_hash = self._current_state()
+        sequence = last_sequence + 1
+        chained = {**entry, "sequence": sequence, "prev_hash": last_hash}
+        entry_hash = _hash_entry(chained)
+        chained["entry_hash"] = entry_hash
+        with open(self.path, "a") as f:
+            f.write(json.dumps(chained) + "\n")
+        return chained
+
     def append(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         """Adds chain fields to `entry`, writes it, and returns the finalized dict."""
         with self._lock:
-            last_sequence, last_hash = self._current_state()
-            sequence = last_sequence + 1
-            chained = {**entry, "sequence": sequence, "prev_hash": last_hash}
-            entry_hash = _hash_entry(chained)
-            chained["entry_hash"] = entry_hash
-            with open(self.path, "a") as f:
-                f.write(json.dumps(chained) + "\n")
-        return chained
+            self._maybe_rotate_locked()
+            return self._write_locked(entry)
+
+    def _should_rotate_locked(self) -> bool:
+        cfg = self._retention_config
+        if not cfg.get("enabled") or not os.path.exists(self.path):
+            return False
+        max_bytes = cfg.get("max_bytes")
+        if max_bytes and os.path.getsize(self.path) >= max_bytes:
+            return True
+        rotate_interval_days = cfg.get("rotate_interval_days")
+        if rotate_interval_days:
+            started_at = _read_first_entry_timestamp(self.path)
+            if started_at is not None:
+                age = datetime.datetime.now(datetime.UTC) - started_at
+                if age >= datetime.timedelta(days=rotate_interval_days):
+                    return True
+        return False
+
+    def _maybe_rotate_locked(self) -> None:
+        if not self._should_rotate_locked():
+            return
+        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+        archived_path = f"{self.path}.{timestamp}"
+        suffix = 0
+        while os.path.exists(archived_path):
+            suffix += 1
+            archived_path = f"{self.path}.{timestamp}-{suffix}"
+        os.rename(self.path, archived_path)
+        logger.info(f"Rotated audit log {self.path} -> {archived_path}")
+
+        deleted = self._sweep_retention_locked()
+        self._write_locked(
+            {
+                "action": "audit_log_rotation",
+                "user": "system",
+                "role": "system",
+                "timestamp": datetime.datetime.now(datetime.UTC)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "rotated_from": archived_path,
+                "deleted_archives": deleted,
+            }
+        )
+
+    def _sweep_retention_locked(self) -> List[str]:
+        """
+        Deletes rotated archives (siblings of `path` named
+        "<path>.<timestamp>[-N]") older than `retention_days`. A falsy
+        retention_days (0/missing) means keep rotated files forever -
+        rotate, but never delete. Returns the filenames deleted.
+        """
+        retention_days = self._retention_config.get("retention_days")
+        if not retention_days:
+            return []
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            days=retention_days
+        )
+        directory = os.path.dirname(self.path) or "."
+        base = os.path.basename(self.path)
+        deleted = []
+        try:
+            candidates = os.listdir(directory)
+        except OSError as e:
+            logger.error(f"Failed to list {directory} for audit retention sweep: {e}")
+            return []
+        for filename in candidates:
+            if filename == base or not filename.startswith(base + "."):
+                continue
+            full_path = os.path.join(directory, filename)
+            try:
+                mtime = datetime.datetime.fromtimestamp(
+                    os.path.getmtime(full_path), tz=datetime.UTC
+                )
+            except OSError:
+                continue
+            if mtime < cutoff:
+                try:
+                    os.remove(full_path)
+                    deleted.append(filename)
+                except OSError as e:
+                    logger.error(
+                        f"Failed to delete expired audit archive {full_path}: {e}"
+                    )
+        if deleted:
+            logger.info(
+                f"Deleted {len(deleted)} expired audit archive(s) past "
+                f"retention_days={retention_days}: {deleted}"
+            )
+        return deleted
 
 
 def verify_chain(path: str) -> Dict[str, Any]:

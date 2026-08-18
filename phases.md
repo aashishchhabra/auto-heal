@@ -311,7 +311,7 @@
 **Goal:** Provide immutable audit logs, export, and analytics for compliance.
 
 ### Stories & Tasks
-- **Story 1: Immutable Audit Log Storage** **[PARTIAL - hash chain + SIEM shipping done, rotation/retention not]**
+- **Story 1: Immutable Audit Log Storage** **[COMPLETE except S3/WORM archival]**
   - Task: Make the audit log itself tamper-evident **[COMPLETE, not
     originally a listed task but the actual substance of "immutable"]**
     - Every `logs/audit.log` entry is SHA-256 hash-chained
@@ -338,11 +338,24 @@
       mirroring to a SIEM) and could be added as another sink later. See
       `src/audit.py::AuditShipper` and "Audit Log: Tamper-Evident Chain
       + External Shipping" in `docs/ACTION_ONBOARDING_GUIDE.md`.
-  - Task: Add log rotation and retention policies
-    - Not built - `logs/audit.log` still grows unbounded, same as
-      before this feature. Worth revisiting together with `verify()`'s
-      cost, which is a full-file scan (bounded per-write appends are
-      still cheap either way).
+  - Task: Add log rotation and retention policies **[COMPLETE]**
+    - Opt-in (disabled by default) size- and/or time-based rotation,
+      plus day-based (not file-count-based) retention that deletes
+      rotated files past `retention_days` - or keeps them forever if
+      unset. A rotated file is renamed aside, never truncated/edited, so
+      it stays independently verifiable; the next write to the active
+      path just starts a fresh, correctly-anchored chain segment (the
+      same "file removed externally" case AuditChain already had to
+      handle for test isolation). Every rotation records itself as the
+      new segment's first entry, noting what it rotated from and what
+      (if anything) retention deleted - not a silent gap. See
+      `config/audit.yaml`'s `retention` section,
+      `src/audit.py::AuditChain._maybe_rotate_locked`/
+      `_sweep_retention_locked`, and "Log Rotation & Retention" in
+      `docs/ACTION_ONBOARDING_GUIDE.md`. Not addressed: `verify()`'s
+      O(n) full-file scan cost on a very large *unrotated* file, and
+      rotation/retention events aren't currently sent through the
+      external shipping sinks (only normal action entries are).
 - **Story 2: Export & Compliance**
   - Task: Export logs in CSV/JSON formats _(1d)_
   - Task: Add compliance metadata (user, timestamp, action) _(1d)_

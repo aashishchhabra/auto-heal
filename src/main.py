@@ -76,11 +76,9 @@ RATE_LIMIT_CONFIG_PATH = os.path.join(
 rate_limiter = RateLimiter(RATE_LIMIT_CONFIG_PATH)
 
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "../logs/audit.log")
-AUDIT_SHIPPING_CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__), "../config/audit.yaml"
-)
-audit_chain = AuditChain(AUDIT_LOG_PATH)
-audit_shipper = AuditShipper(AUDIT_SHIPPING_CONFIG_PATH)
+AUDIT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../config/audit.yaml")
+audit_chain = AuditChain(AUDIT_LOG_PATH, AUDIT_CONFIG_PATH)
+audit_shipper = AuditShipper(AUDIT_CONFIG_PATH)
 
 
 def write_audit_log(entry: dict):
