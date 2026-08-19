@@ -70,6 +70,22 @@ def reset_rate_limiter():
     main.rate_limiter._hits.clear()
 
 
+@pytest.fixture(autouse=True)
+def reset_notification_dedup():
+    """
+    notification_sender is the same kind of module-level singleton, and
+    its dedup state (see NotificationSender.notify) is exactly the same
+    hazard: without a reset, one test's notify() call could silently
+    suppress another, unrelated test's, if they happen to share an
+    (action, controller, status) key within the same session.
+    """
+    import src.main as main
+
+    main.notification_sender._dedup_seen.clear()
+    yield
+    main.notification_sender._dedup_seen.clear()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def patch_subprocess_default():
     """

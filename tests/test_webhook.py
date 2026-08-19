@@ -183,6 +183,23 @@ def test_webhook_malformed_json():
     assert "Malformed JSON" in response.text
 
 
+def _enable_slack(monkeypatch):
+    # Slack/Teams/email/PagerDuty/Opsgenie are all disabled by default
+    # (config/notifications.yaml ships with everything off) - tests that
+    # want to see a notification fire configure a channel explicitly,
+    # the same way test_notifications.py's fixture does, rather than
+    # depending on production config defaults.
+    import src.main as main
+
+    monkeypatch.setattr(main.notification_sender, "slack_enabled", True)
+    monkeypatch.setattr(
+        main.notification_sender, "slack_url", "https://hooks.slack.com/services/test"
+    )
+    monkeypatch.setattr(
+        main.notification_sender, "slack_notify_on", ["success", "failure"]
+    )
+
+
 def test_webhook_triggers_notifications_on_success(monkeypatch):
     class DummyResult:
         success = True
@@ -199,16 +216,16 @@ def test_webhook_triggers_notifications_on_success(monkeypatch):
     monkeypatch.setattr(
         "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
     )
+    _enable_slack(monkeypatch)
     client = TestClient(app)
     payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
     with patch("src.notifications.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
         response = client.post("/webhook", json=payload, headers=get_headers())
         assert response.status_code == 200
-        # Should send at least one notification (Slack or Teams)
         assert mock_post.called
-        # Optionally, check payload structure for Slack/Teams
         calls = [call for call in mock_post.call_args_list]
-        assert any("slack" in str(call) or "teams" in str(call) for call in calls)
+        assert any("slack" in str(call) for call in calls)
 
 
 def test_webhook_triggers_notifications_on_failure(monkeypatch):
@@ -227,14 +244,16 @@ def test_webhook_triggers_notifications_on_failure(monkeypatch):
     monkeypatch.setattr(
         "src.main.executor.run_playbook", lambda *a, **kw: DummyResult()
     )
+    _enable_slack(monkeypatch)
     client = TestClient(app)
     payload = {"event_type": "restart_service", "parameters": {"service_name": "nginx"}}
     with patch("src.notifications.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
         response = client.post("/webhook", json=payload, headers=get_headers())
         assert response.status_code == 200
         assert mock_post.called
         calls = [call for call in mock_post.call_args_list]
-        assert any("slack" in str(call) or "teams" in str(call) for call in calls)
+        assert any("slack" in str(call) for call in calls)
 
 
 def test_webhook_playbook_dry_run(monkeypatch):

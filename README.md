@@ -64,7 +64,7 @@ If your team already has an alerting pipeline and a growing pile of
 - Automated CI/CD with badge automation and onboarding validation
 - Webhook API for triggering healing actions
 - Structured, hash-chained (tamper-evident) audit trail with optional rotation/retention, and optional shipping to syslog/Elasticsearch/any HTTP log platform
-- Slack/Teams notifications on action execution
+- Multi-channel notifications (Slack, Teams, email, PagerDuty, Opsgenie) with severity-based routing, deduplication, and customizable message templates
 - Role-based access control, plus optional per-API-key scoping to a specific set of actions/controllers
 - Optional HashiCorp Vault-backed secrets (API keys, controller SSH/kube credentials), with static-token or in-cluster Kubernetes Vault auth
 - Direct Kubernetes/OpenShift API actions (`kube_action`) alongside SSH-based execution

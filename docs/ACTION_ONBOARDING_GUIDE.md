@@ -225,6 +225,75 @@ from repeated remediation. Rate limiting applies to `/webhook` only
 applied to `/approvals/{id}/approve`, `/approvals/{id}/reject`, or
 read-only endpoints.
 
+### Notifications: Channels, Severity, Templates &amp; Dedup
+`config/notifications.yaml` controls what gets reported when an action
+finishes - both a direct `/webhook` execution and one that ran after
+`/approvals/{id}/approve`. Every channel is opt-in and disabled by
+default; a fresh clone sends no notifications anywhere.
+```yaml
+slack: { enabled: true, webhook_url: "...", notify_on: [success, failure] }
+teams: { enabled: true, webhook_url: "..." }
+email:
+  enabled: true
+  smtp_host: "smtp.example.com"
+  username: "vault:secret/data/auto-healer/email#username"
+  password: "vault:secret/data/auto-healer/email#password"
+  to_addrs: ["oncall@example.com"]
+pagerduty:
+  enabled: true
+  routing_key: "vault:secret/data/auto-healer/pagerduty#routing_key"
+  notify_on: [failure]        # pages a human - opt into "success" explicitly if you want that
+opsgenie:
+  enabled: true
+  api_key: "vault:secret/data/auto-healer/opsgenie#api_key"
+  notify_on: [failure]
+```
+Email is stdlib SMTP (no new dependency); PagerDuty uses the Events API
+v2, Opsgenie the Alert API. Every credential-shaped value accepts the
+same `vault:<path>#<field>` syntax as controller SSH keys.
+
+**Severity** comes from an action's own `severity: info|warning|critical`
+field in `actions.yaml` (defaults to `info` if unset). A failed
+execution is always bumped to at least `warning`, regardless of what the
+action declares - a low-severity action failing to auto-remediate is
+still more worth attention than one that succeeded.
+
+**Routing** (optional, `config/notifications.yaml`'s `routing:` section)
+maps each severity to the channels that should hear about it:
+```yaml
+routing:
+  info: [slack]
+  warning: [slack, email]
+  critical: [slack, pagerduty, opsgenie]
+```
+Leave it unset (the default) and every enabled channel gets every
+notification - the routing layer only narrows things down once you
+opt into it. Once `routing:` is set at all, it becomes the complete
+picture: a severity you don't list gets **no** channels, not "every
+enabled channel" as a fallback. List all three severities you care
+about explicitly - `info: []` (or simply omitting a severity) is a
+deliberate way to say "don't notify anyone for this," not an oversight
+to fix.
+
+**Deduplication** (on by default) suppresses re-sending the same
+`(action, controller, status)` notification within `window_seconds`
+(default 300) - independent of, and in addition to, the cooldowns and
+rate limits that already throttle the underlying `/webhook` calls. A
+flapping action that's still within its cooldown window (so it isn't
+re-executing) shouldn't also re-page everyone every time the alert
+re-fires.
+
+**Templates** (optional, per-channel or a `default` fallback) override a
+channel's built-in wording with a plain `str.format()` string:
+```yaml
+templates:
+  default: "Auto-Healer: {action} on {controller} - {status} ({severity})"
+  pagerduty: "🚨 {action} failed on {controller} - triggered by {user}"
+```
+Available fields: `action`, `controller`, `user`, `status`, `severity`,
+`details`. An unconfigured channel keeps its existing built-in format
+exactly as before this existed.
+
 ### Fine-Grained API Key Scoping (RBAC, per key)
 Role-based permissions (`controller_override`, `execute_actions`,
 `audit_read`, `approvals_read`, `approve_actions` in `config/auth.yaml`)

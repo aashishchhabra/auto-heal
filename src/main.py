@@ -560,14 +560,16 @@ async def webhook(request: Request):
         "dry_run": dry_run,
     }
     write_audit_log(audit_entry)
-    # Send notifications (Slack & Teams)
+    # Send notifications
     status = "success" if exec_result.success else "failure"
     details = exec_result.as_dict().get("stdout") or exec_result.as_dict().get("error")
-    notification_sender.send_slack_notification(
-        event_type, controller_name, api_key, status, details=details
-    )
-    notification_sender.send_teams_notification(
-        event_type, controller_name, api_key, status, details=details
+    notification_sender.notify(
+        event_type,
+        controller_name,
+        api_key,
+        status,
+        details=details,
+        severity=action_config.get("severity"),
     )
     return {
         "action": event_type,
@@ -861,6 +863,23 @@ def approve_approval(approval_id: str, request: Request):
         "approver_role": approver_role,
     }
     write_audit_log(audit_entry)
+    # An approved action executing is exactly as notify-worthy as a
+    # directly-executed one - previously this path sent no notification
+    # at all, so an on-call engineer who approved a drain from their phone
+    # had no signal it actually finished (or failed) beyond polling
+    # /approvals themselves.
+    approved_status = "success" if exec_result.success else "failure"
+    approved_details = exec_result.as_dict().get("stdout") or exec_result.as_dict().get(
+        "error"
+    )
+    notification_sender.notify(
+        event_type,
+        controller_name,
+        entry["requested_by"],
+        approved_status,
+        details=approved_details,
+        severity=action_config.get("severity"),
+    )
     return {"status": "approved", "result": exec_result.as_dict()}
 
 
